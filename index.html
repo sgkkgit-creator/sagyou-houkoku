@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="作業報告書">
+<meta name="theme-color" content="#1668c1">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>作業報告書</title>
+<style>
+/* ===================================================================
+   自社作業報告書 スマホ版
+   Excel版(自社作業報告書.xlsm)と同じ体裁・同じ入力ルールで動きます。
+   単体のHTMLなのでネット接続もアプリのインストールも不要です。
+   =================================================================== */
+
+:root{
+  --bg:#f2f4f7; --card:#fff; --line:#d5dae2; --ink:#1a1f2b; --sub:#5e6b7f;
+  --guide:#e7f1fb; --guide-b:#8fbde8; --accent:#1668c1; --warn:#c0392b;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0; padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Yu Gothic","游ゴシック体",YuGothic,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  font-size:16px; line-height:1.5;
+}
+
+/* ---------- 画面上部の操作バー ---------- */
+#bar{
+  position:sticky; top:0; z-index:50; background:#fff;
+  border-bottom:1px solid var(--line); padding:8px 10px;
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  padding-top:calc(8px + env(safe-area-inset-top,0px));
+}
+#bar h1{font-size:16px; margin:0; flex:1 1 auto; white-space:nowrap}
+#bar .st{font-size:11px; color:var(--sub); flex:0 0 auto}
+button{
+  font:inherit; font-size:14px; padding:9px 14px; border-radius:8px;
+  border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer;
+  min-height:40px;
+}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700}
+button.ghost{background:#fff}
+button:active{opacity:.7}
+
+/* ---------- タブ ---------- */
+#tabs{display:flex; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:57px; z-index:49}
+#tabs button{
+  flex:1; border:0; border-bottom:3px solid transparent; border-radius:0;
+  padding:12px 0; color:var(--sub); font-weight:700; background:#fff;
+}
+#tabs button[aria-selected="true"]{color:var(--accent); border-bottom-color:var(--accent)}
+
+/* ---------- 入力フォーム ---------- */
+#form{padding:12px 10px calc(90px + var(--safe-b))}
+.sec{background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:12px; overflow:hidden}
+.sec>h2{
+  margin:0; padding:10px 12px; font-size:14px; background:#eef2f7;
+  border-bottom:1px solid var(--line); color:var(--sub); letter-spacing:.04em;
+}
+.sec>.body{padding:10px 12px}
+.f{margin-bottom:12px}
+.f:last-child{margin-bottom:0}
+.f>label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px; font-weight:700}
+.f .hint{font-size:11px; color:var(--sub); font-weight:400; margin-left:4px}
+input[type=text],input[type=number],textarea,select{
+  width:100%; font:inherit; font-size:16px; padding:10px;
+  border:1px solid var(--guide-b); border-radius:8px; background:var(--guide);
+  color:var(--ink); -webkit-appearance:none; appearance:none;
+}
+textarea{resize:vertical; line-height:1.45}
+input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px; background:#fff}
+.row{display:flex; gap:8px; align-items:center}
+.row>*{min-width:0}
+.grow{flex:1}
+.w4{flex:0 0 4.5em} .w5{flex:0 0 5.5em} .w6{flex:0 0 7em}
+.sep{flex:0 0 auto; color:var(--sub); font-size:14px}
+.cap{font-size:12px; color:var(--sub); flex:0 0 auto}
+.over{color:var(--warn); font-size:12px; margin-top:4px; font-weight:700; display:none}
+.over.on{display:block}
+.grid3{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.tbl{width:100%; border-collapse:collapse}
+.tbl th{font-size:11px; color:var(--sub); font-weight:700; padding:2px 4px; text-align:left}
+.tbl td{padding:2px 3px}
+
+/* ---------- 設定 ---------- */
+#settings{padding:12px 10px calc(90px + var(--safe-b)); display:none}
+.note{font-size:12px; color:var(--sub); margin:0 0 12px; line-height:1.6}
+#needConf{
+  display:none; background:#fff6e5; border:1px solid #e0b96a; color:#7a5200;
+  border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;
+}
+#needConf.on{display:block}
+
+/* ---------- プレビュー ---------- */
+#preview{padding:10px 0 calc(90px + var(--safe-b)); display:none}
+#pvwrap{overflow:auto; -webkit-overflow-scrolling:touch; padding:0 10px}
+#pvscale{transform-origin:top left}
+#pvnote{font-size:12px; color:var(--sub); padding:0 14px 10px}
+
+/* ===== A4 の帳票本体 (Excel と同じ列幅・行位置) =====
+   Excel の列幅 A〜O=4, P=3.4, Q=1.2, R=3.4 を 5 倍して整数化し、
+   グリッドに割り付けています。時刻が切れないよう P と R だけ
+   17→24 に広げてあります(合計 354 分割)。 */
+#sheet{
+  width:174.4mm;           /* A4 210mm - 左右余白 17.8mm x2 */
+  height:259mm;            /* A4 297mm - 上下余白 19mm x2 */
+  background:#fff;
+  display:grid;
+  grid-template-columns:repeat(354,1fr);
+  grid-template-rows:repeat(3,18fr) repeat(49,14fr);
+  color:#000;
+  font-family:"Yu Gothic","游ゴシック体",YuGothic,"Hiragino Kaku Gothic ProN",sans-serif;
+}
+#sheet .c{
+  display:flex; align-items:center; padding:0 1.2pt;
+  font-size:10pt; overflow:hidden; white-space:pre; min-width:0;
+}
+#sheet .ctr{justify-content:center; text-align:center}
+#sheet .rgt{justify-content:flex-end; text-align:right}
+#sheet .b{font-weight:700}
+#sheet .f8{font-size:8pt} #sheet .f9{font-size:9pt} #sheet .f10{font-size:10pt}
+#sheet .f11{font-size:11pt} #sheet .f14{font-size:14pt} #sheet .f18{font-size:18pt; letter-spacing:.18em}
+#sheet .val{white-space:pre; overflow:hidden; text-overflow:clip}
+#sheet .shrink{font-size:8pt}
+/* 罫線: 1=極細 2=細 3=中 */
+.l1{border-left:.25pt solid #000}  .t1{border-top:.25pt solid #000}
+.r1{border-right:.25pt solid #000} .u1{border-bottom:.25pt solid #000}
+.l2{border-left:.5pt solid #000}   .t2{border-top:.5pt solid #000}
+.r2{border-right:.5pt solid #000}  .u2{border-bottom:.5pt solid #000}
+.l3{border-left:1pt solid #000}    .t3{border-top:1pt solid #000}
+.r3{border-right:1pt solid #000}   .u3{border-bottom:1pt solid #000}
+
+/* ---------- 印刷 ---------- */
+@page{ size:A4 portrait; margin:19mm 17.8mm; }
+@media print{
+  body{background:#fff}
+  #bar,#tabs,#form,#pvnote{display:none !important}
+  #preview{display:block !important; padding:0}
+  #pvwrap{overflow:visible; padding:0}
+  /* 画面用に付けた縮小と高さ指定を解除しないと、印刷が2ページに割れる */
+  #pvscale{transform:none !important; height:auto !important; width:auto !important}
+  #sheet{width:100%; height:259mm; box-shadow:none; margin:0}
+}
+#sheet{box-shadow:0 1px 6px rgba(0,0,0,.18)}
+
+/* ---------- 下部の固定ボタン ---------- */
+#foot{
+  position:fixed; left:0; right:0; bottom:0; z-index:60; background:#fff;
+  border-top:1px solid var(--line); padding:8px 10px calc(8px + var(--safe-b));
+  display:flex; gap:8px;
+}
+#foot button{flex:1}
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <h1>作業報告書</h1>
+  <span class="st" id="saveState">—</span>
+</div>
+
+<div id="tabs" role="tablist">
+  <button id="tabForm" role="tab" aria-selected="true">入力</button>
+  <button id="tabPrev" role="tab" aria-selected="false">プレビュー</button>
+  <button id="tabConf" role="tab" aria-selected="false">設定</button>
+</div>
+
+<!-- ================= 入力フォーム ================= -->
+<div id="form">
+
+  <div id="needConf">
+    はじめに「<b>設定</b>」タブで自社名・住所・電話番号を登録してください。<br>
+    登録は<b>この端末に1回だけ</b>で、以降は報告書の右上に印刷されます。
+  </div>
+
+  <div class="sec">
+    <h2>報告日・お客様</h2>
+    <div class="body">
+      <div class="f">
+        <label>報告日</label>
+        <div class="row">
+          <input type="text" class="w6" id="dy" inputmode="numeric" placeholder="2026"><span class="sep">年</span>
+          <input type="text" class="w4" id="dm" inputmode="numeric" placeholder="7"><span class="sep">月</span>
+          <input type="text" class="w4" id="dd" inputmode="numeric" placeholder="27"><span class="sep">日</span>
+          <button class="ghost" id="today" style="padding:8px 10px">今日</button>
+        </div>
+      </div>
+      <div class="f"><label>お客様名</label><input type="text" id="customer"></div>
+      <div class="f"><label>ご住所</label><input type="text" id="address"></div>
+      <div class="f"><label>ご担当</label><input type="text" id="contact"></div>
+      <div class="f"><label>ご依頼元</label><input type="text" id="client"></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>作業者・作業日時</h2>
+    <div class="body">
+      <div class="f"><label>作業責任者</label><input type="text" id="chief"></div>
+      <div class="f">
+        <label>作業者 <span class="hint">最大6名</span></label>
+        <div class="grid3" id="workers"></div>
+      </div>
+      <div class="f">
+        <label>作業日と時間 <span class="hint">最大3行・時間は「900」でも可</span></label>
+        <table class="tbl"><thead><tr><th>作業日</th><th>開始</th><th></th><th>終了</th></tr></thead>
+        <tbody id="days"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>報告内容</h2>
+    <div class="body">
+      <div class="f">
+        <label>件名 <span class="hint">最大2行</span></label>
+        <textarea id="title" rows="2" data-max="2"></textarea><div class="over" id="over_title"></div>
+      </div>
+      <div class="f">
+        <label>状況 <span class="hint">最大4行</span></label>
+        <textarea id="situation" rows="4" data-max="4"></textarea><div class="over" id="over_situation"></div>
+      </div>
+      <div class="f">
+        <label>作業内容 <span class="hint">最大18行</span></label>
+        <textarea id="work" rows="10" data-max="18"></textarea><div class="over" id="over_work"></div>
+      </div>
+      <div class="f">
+        <label>使用材料 <span class="hint">最大2行</span></label>
+        <textarea id="material" rows="2" data-max="2"></textarea><div class="over" id="over_material"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>修理機器</h2>
+    <div class="body" id="equip"></div>
+  </div>
+
+  <div class="sec">
+    <h2>運転データ</h2>
+    <div class="body">
+      <div id="meas"></div>
+      <div class="f" style="margin-top:14px">
+        <label>自由記入 <span class="hint">見出し・数値・単位を自由に</span></label>
+        <table class="tbl"><thead><tr><th>見出し</th><th>数値</th><th>単位</th></tr></thead>
+        <tbody id="free"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>備考</h2>
+    <div class="body">
+      <div class="f"><textarea id="remark" rows="3"></textarea></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================= 設定(自社情報) ================= -->
+<div id="settings">
+  <div class="sec">
+    <h2>自社情報</h2>
+    <div class="body">
+      <p class="note">
+        報告書の右上に印刷される自社の情報です。<b>この端末に保存され、外部には送信されません。</b><br>
+        一度登録すれば、以降は入力不要です。「入力クリア」を押しても消えません。
+      </p>
+      <div class="f"><label>会社名</label><input type="text" id="coName" placeholder="○○株式会社"></div>
+      <div class="f"><label>住所</label><input type="text" id="coAddr" placeholder="東京都○○区○○1-2-3 ○○ビル101"></div>
+      <div class="f"><label>電話・FAX</label><input type="text" id="coTel" placeholder="TEL 03-0000-0000　　FAX 03-0000-0000"></div>
+    </div>
+  </div>
+  <div class="sec">
+    <h2>この端末の保存について</h2>
+    <div class="body">
+      <p class="note">
+        入力内容と自社情報は、この端末のブラウザ内にのみ保存されます。他の端末とは同期しません。<br>
+        ブラウザのデータを消去すると消えるため、仕上がった報告書は必ず PDF で残してください。
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= プレビュー ================= -->
+<div id="preview">
+  <div id="pvnote">下の「PDF出力」を押し、印刷画面で「PDFとして保存」を選んでください。</div>
+  <div id="pvwrap"><div id="pvscale"><div id="sheet"></div></div></div>
+</div>
+
+<div id="foot">
+  <button class="ghost" id="btnClear">入力クリア</button>
+  <button class="primary" id="btnPdf">PDF出力</button>
+</div>
+
+<script>
+"use strict";
+
+/* ===================================================================
+   1. データ
+   =================================================================== */
+const LIMIT = { title:2, situation:4, work:18, material:2 };
+const KEY = "sagyou-houkokusho-v1";
+// 自社情報は入力データとは別に保存する(「入力クリア」で消えないようにするため)
+const KEY_CO = "sagyou-houkokusho-company-v1";
+let CO = { name:"", addr:"", tel:"" };
+
+function blank(){
+  return {
+    dy:"", dm:"", dd:"",
+    customer:"", address:"", contact:"", client:"",
+    chief:"",
+    workers:["","","","","",""],
+    days:[{d:"",s:"",e:""},{d:"",s:"",e:""},{d:"",s:"",e:""}],
+    title:"", situation:"", work:"", material:"",
+    equip:[{m:"",s:"",p:""},{m:"",s:"",p:""},{m:"",s:"",p:""},{m:"",s:"",p:""}],
+    remark:"",
+    meas:{hp:"",lp:"",dis:"",suc:"",liq:"",crank:"",amp:""},
+    meas2:{in:"",out:""},
+    free:[{l:"",v:"",u:""},{l:"",v:"",u:""},{l:"",v:"",u:""},{l:"",v:"",u:""},{l:"",v:"",u:""}]
+  };
+}
+let D = blank();
+
+/* ===================================================================
+   2. 入力の整形 (Excel版の NormalizeTime / TrimTail と同じ規則)
+   =================================================================== */
+
+// 末尾の空行・空白を落とす。途中の空行は意味があるので残す。
+function trimTail(s){
+  s = String(s == null ? "" : s);
+  while (s.length){
+    const c = s[s.length-1];
+    if (c === "\n" || c === "\r" || c === " " || c === "\t" || c === "　") s = s.slice(0,-1);
+    else break;
+  }
+  return s;
+}
+function lineCount(s){ s = trimTail(s); return s === "" ? 0 : s.split("\n").length; }
+
+// 全角→半角
+function toHalf(s){
+  return String(s).replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+                  .replace(/　/g," ");
+}
+
+// 「900」「9」「9:00」「9時30分」「０９：００」→ "9:00" 形式。読めなければ ""。
+function normalizeTime(s){
+  let t = toHalf(String(s == null ? "" : s)).trim();
+  if (!t) return "";
+  t = t.replace(/：/g,":").replace(/時/g,":").replace(/分/g,"").replace(/\./g,":").replace(/\s/g,"");
+  let h, m;
+  if (t.indexOf(":") >= 0){
+    const p = t.split(":");
+    if (p[0] === "" || !/^\d+$/.test(p[0])) return "";
+    h = parseInt(p[0],10);
+    if (p.length > 1 && p[1] !== ""){
+      if (!/^\d+$/.test(p[1])) return "";
+      m = parseInt(p[1],10);
+    } else m = 0;
+  } else {
+    if (!/^\d+$/.test(t)) return "";
+    if (t.length <= 2){ h = parseInt(t,10); m = 0; }
+    else if (t.length === 3){ h = parseInt(t.slice(0,1),10); m = parseInt(t.slice(1),10); }
+    else if (t.length === 4){ h = parseInt(t.slice(0,2),10); m = parseInt(t.slice(2),10); }
+    else return "";
+  }
+  if (h < 0 || h > 29 || m < 0 || m > 59) return "";
+  return h + ":" + String(m).padStart(2,"0");
+}
+
+// 「727」「7-27」「7/27」→ "7/27"。読めなければ ""。
+function normalizeMD(s){
+  let t = toHalf(String(s == null ? "" : s)).trim();
+  if (!t) return "";
+  t = t.replace(/[-.月]/g,"/").replace(/日/g,"").replace(/\s/g,"");
+  let mo, da;
+  if (t.indexOf("/") >= 0){
+    const p = t.split("/").filter(x => x !== "");
+    if (p.length < 2 || !/^\d+$/.test(p[0]) || !/^\d+$/.test(p[1])) return "";
+    mo = parseInt(p[0],10); da = parseInt(p[1],10);
+  } else {
+    if (!/^\d+$/.test(t)) return "";
+    if (t.length === 3){ mo = parseInt(t.slice(0,1),10); da = parseInt(t.slice(1),10); }
+    else if (t.length === 4){ mo = parseInt(t.slice(0,2),10); da = parseInt(t.slice(2),10); }
+    else return "";
+  }
+  if (mo < 1 || mo > 12 || da < 1 || da > 31) return "";
+  return mo + "/" + da;
+}
+
+// 数字だけ取り出す(年・月・日用)
+function digits(s){ const t = toHalf(String(s||"")).replace(/[^\d]/g,""); return t; }
+
+/* ===================================================================
+   3. フォームの組み立て
+   =================================================================== */
+const MEAS = [
+  ["hp","高圧圧力","mpa"], ["lp","低圧圧力","mpa"], ["dis","吐出温度","℃"],
+  ["suc","吸入温度","℃"], ["liq","液配管温度","℃"], ["crank","クランク","℃"], ["amp","電流値","A"]
+];
+const MEAS2 = [ ["in","吸込温度","℃"], ["out","吹出温度","℃"] ];
+const EQUIP_LABEL = ["修理機器","熱源機","リモコン","集中管理"];
+
+function el(tag, attrs, kids){
+  const e = document.createElement(tag);
+  if (attrs) for (const k in attrs){
+    if (k === "class") e.className = attrs[k];
+    else if (k === "text") e.textContent = attrs[k];
+    else e.setAttribute(k, attrs[k]);
+  }
+  (kids||[]).forEach(k => e.appendChild(k));
+  return e;
+}
+
+function buildForm(){
+  // 作業者 6名
+  const w = document.getElementById("workers");
+  for (let i=0;i<6;i++){
+    const inp = el("input",{type:"text",id:"worker"+i,placeholder:(i+1)+"人目"});
+    inp.addEventListener("input", ()=>{ D.workers[i] = inp.value; touch(); });
+    w.appendChild(inp);
+  }
+  // 作業日 3行
+  const tb = document.getElementById("days");
+  for (let i=0;i<3;i++){
+    const d = el("input",{type:"text",inputmode:"numeric",placeholder:"7/27"});
+    const s = el("input",{type:"text",inputmode:"numeric",placeholder:"9:00"});
+    const e = el("input",{type:"text",inputmode:"numeric",placeholder:"17:00"});
+    d.addEventListener("input", ()=>{ D.days[i].d = d.value; touch(); });
+    s.addEventListener("input", ()=>{ D.days[i].s = s.value; touch(); });
+    e.addEventListener("input", ()=>{ D.days[i].e = e.value; touch(); });
+    d.addEventListener("blur", ()=>{ const v=normalizeMD(d.value); if(v){ d.value=v; D.days[i].d=v; touch(); } });
+    s.addEventListener("blur", ()=>{ const v=normalizeTime(s.value); if(v){ s.value=v; D.days[i].s=v; touch(); } });
+    e.addEventListener("blur", ()=>{ const v=normalizeTime(e.value); if(v){ e.value=v; D.days[i].e=v; touch(); } });
+    d.id="day"+i; s.id="beg"+i; e.id="end"+i;
+    tb.appendChild(el("tr",null,[
+      el("td",null,[d]), el("td",null,[s]),
+      el("td",{class:"sep"},[document.createTextNode("〜")]), el("td",null,[e])
+    ]));
+  }
+  // 修理機器 4行
+  const eq = document.getElementById("equip");
+  for (let i=0;i<4;i++){
+    const m = el("input",{type:"text",id:"eqm"+i,placeholder:"型名"});
+    const s = el("input",{type:"text",id:"eqs"+i,placeholder:"製造番号"});
+    const p = el("input",{type:"text",id:"eqp"+i,placeholder:"系統名・据付場所"});
+    m.addEventListener("input", ()=>{ D.equip[i].m = m.value; touch(); });
+    s.addEventListener("input", ()=>{ D.equip[i].s = s.value; touch(); });
+    p.addEventListener("input", ()=>{ D.equip[i].p = p.value; touch(); });
+    eq.appendChild(el("div",{class:"f"},[
+      el("label",{text:EQUIP_LABEL[i]}), m,
+      el("div",{class:"grid3",style:"margin-top:8px"},[s,p])
+    ]));
+  }
+  // 運転データ(固定項目)
+  const ms = document.getElementById("meas");
+  const mk = (id,label,unit,store) => {
+    const inp = el("input",{type:"text",id:id,inputmode:"decimal"});
+    inp.addEventListener("input", ()=>{ store(inp.value); touch(); });
+    return el("div",{class:"f"},[
+      el("label",{text:label+" ("+unit+")"}), inp
+    ]);
+  };
+  const g = el("div",{class:"grid3"});
+  MEAS.forEach(([k,l,u]) => g.appendChild(mk("m_"+k,l,u,v=>D.meas[k]=v)));
+  MEAS2.forEach(([k,l,u]) => g.appendChild(mk("m2_"+k,l,u,v=>D.meas2[k]=v)));
+  ms.appendChild(g);
+  // 自由記入 5行
+  const fr = document.getElementById("free");
+  for (let i=0;i<5;i++){
+    const l = el("input",{type:"text",id:"frl"+i});
+    const v = el("input",{type:"text",id:"frv"+i,inputmode:"decimal"});
+    const u = el("input",{type:"text",id:"fru"+i});
+    l.addEventListener("input", ()=>{ D.free[i].l = l.value; touch(); });
+    v.addEventListener("input", ()=>{ D.free[i].v = v.value; touch(); });
+    u.addEventListener("input", ()=>{ D.free[i].u = u.value; touch(); });
+    fr.appendChild(el("tr",null,[el("td",null,[l]),el("td",null,[v]),el("td",null,[u])]));
+  }
+
+  // 単純な項目
+  [["dy","dy"],["dm","dm"],["dd","dd"],["customer","customer"],["address","address"],
+   ["contact","contact"],["client","client"],["chief","chief"],["remark","remark"]]
+   .forEach(([id,key])=>{
+     const e = document.getElementById(id);
+     e.addEventListener("input", ()=>{ D[key] = e.value; touch(); });
+   });
+  ["dy","dm","dd"].forEach(id=>{
+    const e = document.getElementById(id);
+    e.addEventListener("blur", ()=>{ const v=digits(e.value); e.value=v; D[id]=v; touch(); });
+  });
+
+  // 行数制限つきの複数行欄
+  Object.keys(LIMIT).forEach(key=>{
+    const t = document.getElementById(key);
+    const warn = document.getElementById("over_"+key);
+    const check = ()=>{
+      D[key] = t.value;
+      const n = lineCount(t.value), max = LIMIT[key];
+      if (n > max){
+        warn.textContent = "行数が枠("+max+"行)を超えています。現在 "+n+" 行あります。はみ出した分は印刷されません。";
+        warn.classList.add("on");
+      } else warn.classList.remove("on");
+      touch();
+    };
+    t.addEventListener("input", check);
+    t._check = check;
+  });
+
+  document.getElementById("today").addEventListener("click", ()=>{
+    const n = new Date();
+    D.dy = String(n.getFullYear()); D.dm = String(n.getMonth()+1); D.dd = String(n.getDate());
+    document.getElementById("dy").value = D.dy;
+    document.getElementById("dm").value = D.dm;
+    document.getElementById("dd").value = D.dd;
+    touch();
+  });
+}
+
+// 保存済みデータをフォームに戻す
+function fillForm(){
+  const set = (id,v) => { const e = document.getElementById(id); if (e) e.value = v || ""; };
+  ["dy","dm","dd","customer","address","contact","client","chief","remark",
+   "title","situation","work","material"].forEach(k => set(k, D[k]));
+  D.workers.forEach((v,i)=> set("worker"+i, v));
+  D.days.forEach((v,i)=>{ set("day"+i,v.d); set("beg"+i,v.s); set("end"+i,v.e); });
+  D.equip.forEach((v,i)=>{ set("eqm"+i,v.m); set("eqs"+i,v.s); set("eqp"+i,v.p); });
+  MEAS.forEach(([k])=> set("m_"+k, D.meas[k]));
+  MEAS2.forEach(([k])=> set("m2_"+k, D.meas2[k]));
+  D.free.forEach((v,i)=>{ set("frl"+i,v.l); set("frv"+i,v.v); set("fru"+i,v.u); });
+  Object.keys(LIMIT).forEach(k=>{ const t=document.getElementById(k); if (t && t._check) t._check(); });
+}
+
+/* ===================================================================
+   4. 帳票(A4)の描画 — Excel と同じ列位置・行位置
+   =================================================================== */
+const COLS = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R"];
+// Excel の列幅を 5 倍した開始位置(1 起点)。
+// P(開始時刻)と R(終了時刻)だけ 17→24 に広げ、「17:30」が切れないようにしている。
+const CSTART = {A:1,B:21,C:41,D:61,E:81,F:101,G:121,H:141,I:161,J:181,
+                K:201,L:221,M:241,N:261,O:281,P:301,Q:325,R:331};
+const CEND = 355;
+function colEnd(c){
+  const i = COLS.indexOf(c);
+  return (i === COLS.length-1) ? CEND : CSTART[COLS[i+1]];
+}
+// "C4:I5" / "A45" を grid 座標へ
+function place(range){
+  const p = range.split(":");
+  const m1 = /^([A-R])(\d+)$/.exec(p[0]);
+  const m2 = p[1] ? /^([A-R])(\d+)$/.exec(p[1]) : m1;
+  return {
+    gridColumn: CSTART[m1[1]] + " / " + colEnd(m2[1]),
+    gridRow: m1[2] + " / " + (parseInt(m2[2],10)+1)
+  };
+}
+function cell(range, text, cls, bd){
+  const d = document.createElement("div");
+  // fit = 入りきらない文字を自動で縮める対象(Excelの「縮小して全体を表示」と同じ)
+  d.className = "c fit " + (cls||"") + " " + (bd||"");
+  const g = place(range);
+  d.style.gridColumn = g.gridColumn;
+  d.style.gridRow = g.gridRow;
+  if (text != null && text !== "") d.textContent = text;
+  return d;
+}
+
+// 複数行欄: 1行ずつ別の行セルに入れる(Excelと同じ)
+function multi(sheet, startRow, maxRows, colFrom, colTo, value, cls){
+  const lines = trimTail(value || "").split("\n");
+  for (let i=0;i<maxRows;i++){
+    const r = startRow + i;
+    const bd = "l3 r3 " + (i===0 ? "t3 " : "") + (i===maxRows-1 ? "u3" : "");
+    sheet.appendChild(cell(colFrom+r+":"+colTo+r, lines[i] || "", cls||"f11", bd));
+  }
+}
+
+function render(){
+  const s = document.getElementById("sheet");
+  s.textContent = "";
+  const add = (...a) => s.appendChild(cell(...a));
+
+  /* ---- 見出し ---- */
+  add("F1:L2", "作 業 報 告 書", "ctr b f18");
+  add("M2", "報告日", "ctr f10");
+  add("O2", D.dy ? D.dy+"年" : "年", "ctr f9");
+  add("P2:Q2", D.dm ? D.dm+"月" : "月", "ctr f9");
+  add("R2", D.dd ? D.dd+"日" : "日", "ctr f9");
+
+  // 自社情報は「設定」タブで登録したものを使う(未登録なら空欄のまま印刷される)
+  add("K4:R5", CO.name, "ctr b f14");
+  add("K6:R6", CO.addr, "f10");
+  add("K7:R7", CO.tel,  "f10");
+
+  /* ---- お客様情報 ---- */
+  const infoRows = [
+    ["お客様名","A4:B5","C4:I5","customer"],
+    ["ご住所","A6:B7","C6:H7","address"],
+    ["ご担当","A8:B9","C8:H9","contact"],
+    ["ご依頼元","A10:B11","C10:H11","client"]
+  ];
+  infoRows.forEach(([lab,lr,vr,key])=>{
+    add(lr, lab, "ctr f10", "l3 t2 u2 r2");
+    add(vr, D[key], "f11 val", "t2 u2 r2");
+  });
+
+  /* ---- 作業者・作業日時の表 ---- */
+  add("K8:L8", "作業責任者", "ctr f8", "l3 t3 u1 r1");
+  add("M8:N8", "作業者",   "ctr f8", "t3 u1 r1");
+  add("O8",    "作業日",   "ctr f8", "t3 u1 r1");
+  add("P8:R8", "時間",     "ctr f8", "t3 u1 r3");
+  add("K9:L11", D.chief, "ctr f10 val", "l3 u3 r1");
+  for (let i=0;i<3;i++){
+    const r = 9+i;
+    const last = (i===2) ? "u3 " : "";
+    add("M"+r, D.workers[i*2]   || "", "f8 val", last+"r1");
+    add("N"+r, D.workers[i*2+1] || "", "f8 val", last+"r1");
+    add("O"+r, D.days[i].d || "/", "ctr f8", last+"r1");
+    add("P"+r, D.days[i].s || ":", "ctr f8", last);
+    add("Q"+r, "〜",               "ctr f8", last);
+    add("R"+r, D.days[i].e || ":", "ctr f8", last+"r3");
+  }
+
+  /* ---- 件名・状況・作業内容・使用材料 ---- */
+  const blocks = [
+    ["件名",    "A14:B15", 14, LIMIT.title,     "title"],
+    ["状況",    "A16:B19", 16, LIMIT.situation, "situation"],
+    ["作業内容","A20:B37", 20, LIMIT.work,      "work"],
+    ["使用材料","A38:B39", 38, LIMIT.material,  "material"]
+  ];
+  blocks.forEach(([lab,lr,start,max,key])=>{
+    add(lr, lab, "ctr f10", "l3 t3 u3 r3");
+    multi(s, start, max, "C", "R", D[key]);
+  });
+
+  /* ---- 修理機器 ---- */
+  add("A40:B40", "",              "ctr f9", "l3 t3 u1 r3");
+  add("C40:H40", "型名",          "ctr f9", "t3 u1 r1");
+  add("I40:L40", "製造番号",      "ctr f9", "t3 u1 r1");
+  add("M40:R40", "系統名・据付場所","ctr f9", "t3 u1 r3");
+  for (let i=0;i<4;i++){
+    const r = 41+i;
+    const last = (i===3) ? "u3 " : "";
+    add("A"+r+":B"+r, EQUIP_LABEL[i], "f9", "l3 "+last+"r3");
+    add("C"+r+":H"+r, D.equip[i].m, "ctr f10 val", last+"r1");
+    add("I"+r+":L"+r, D.equip[i].s, "ctr f10 val", last+"r1");
+    add("M"+r+":R"+r, D.equip[i].p, "ctr f10 val", last+"r3");
+  }
+
+  /* ---- 運転データ ---- */
+  add("A45:H45", "運転データ", "ctr f9", "l3 t3 u1 r3");
+  // 左ブロック(固定7項目)
+  MEAS.forEach(([k,l,u],i)=>{
+    const r = 46+i;
+    const last = (i===MEAS.length-1) ? "u3 " : "";
+    add("A"+r+":B"+r, l, "f9", "l3 "+last);
+    add("C"+r, D.meas[k], "rgt f10 val", last);
+    add("D"+r, D.meas[k] ? u : "", "f8", last+"r3");
+  });
+  // 右ブロック(固定2項目 + 自由記入5行)
+  MEAS2.forEach(([k,l,u],i)=>{
+    const r = 46+i;
+    add("E"+r+":F"+r, l, "f10", "t"+(i===0?"3":"1")+" r1");
+    add("G"+r, D.meas2[k], "rgt f10 val", "t"+(i===0?"3":"1"));
+    add("H"+r, D.meas2[k] ? u : "", "f8", "t"+(i===0?"3":"1")+" r3");
+  });
+  for (let i=0;i<5;i++){
+    const r = 48+i;
+    const last = (i===4) ? "u3 " : "";
+    add("E"+r+":F"+r, D.free[i].l, "f10 val", last+"r1");
+    add("G"+r, D.free[i].v, "rgt f10 val", last);
+    add("H"+r, D.free[i].u, "f8", last+"r3");
+  }
+
+  /* ---- 備考 ---- */
+  const rem = trimTail(D.remark||"").split("\n");
+  const remBox = cell("I45:R46", "", "f9 nofit", "l3 t3 u3 r3");
+  remBox.style.alignItems = "flex-start";
+  remBox.style.whiteSpace = "pre-wrap";
+  remBox.style.lineHeight = "1.25";
+  remBox.style.padding = "1pt 2pt";
+  remBox.style.fontSize = "8.5pt";
+  remBox.textContent = rem.join("\n");
+  s.appendChild(remBox);
+
+  /* ---- 承認欄 ---- */
+  add("I47:K47", "", "ctr f9", "l3 t3 u2 r2");
+  add("L47:N47", "", "ctr f9", "t3 u2 r3");
+  add("O47:R47", "御承認印", "ctr f9", "t3 u2 r3");
+  add("I48:K52", "", "", "l3 u3 r2");
+  add("L48:N52", "", "", "u3 r3");
+  add("O48:R52", "", "", "u3 r3");
+
+  shrinkToFit();
+}
+
+/* 入りきらない文字を自動で縮める(Excelの「縮小して全体を表示する」と同じ)。
+   これで長い名前や長い時刻でも端が切れることはない。 */
+function shrinkToFit(){
+  const sheet = document.getElementById("sheet");
+  if (!sheet.clientWidth) return;              // 非表示のときは測れないので後回し
+  const meas = document.createElement("span");
+  meas.style.cssText = "position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0";
+  document.body.appendChild(meas);
+  sheet.querySelectorAll(".c.fit").forEach(c=>{
+    c.style.fontSize = "";
+    const txt = c.textContent;
+    if (!txt) return;
+    const cs = getComputedStyle(c);
+    const avail = c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (avail <= 0) return;
+    meas.style.font = cs.font;
+    meas.style.letterSpacing = cs.letterSpacing;
+    meas.textContent = txt;
+    const w = meas.getBoundingClientRect().width;
+    if (w > avail){
+      const base = parseFloat(cs.fontSize);
+      c.style.fontSize = Math.max(5, base * avail / w) + "px";
+    }
+  });
+  meas.remove();
+}
+
+/* ===================================================================
+   5. 保存・タブ・印刷
+   =================================================================== */
+let saveTimer = null;
+function touch(){
+  document.getElementById("saveState").textContent = "入力中…";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 400);
+  if (document.getElementById("preview").style.display === "block") render();
+}
+function save(){
+  try{
+    localStorage.setItem(KEY, JSON.stringify(D));
+    const n = new Date();
+    document.getElementById("saveState").textContent =
+      "保存済 " + String(n.getHours()).padStart(2,"0") + ":" + String(n.getMinutes()).padStart(2,"0");
+  }catch(e){
+    document.getElementById("saveState").textContent = "保存できません";
+  }
+}
+/* ---- 自社情報(設定タブ) ---- */
+function saveCO(){
+  try{ localStorage.setItem(KEY_CO, JSON.stringify(CO)); }catch(e){}
+  document.getElementById("needConf").classList.toggle("on", !CO.name.trim());
+}
+function loadCO(){
+  try{
+    const o = JSON.parse(localStorage.getItem(KEY_CO) || "null");
+    if (o) CO = { name:o.name||"", addr:o.addr||"", tel:o.tel||"" };
+  }catch(e){}
+  const set = (id,v) => { const e = document.getElementById(id); if (e) e.value = v || ""; };
+  set("coName", CO.name); set("coAddr", CO.addr); set("coTel", CO.tel);
+  document.getElementById("needConf").classList.toggle("on", !CO.name.trim());
+}
+function bindCO(){
+  [["coName","name"],["coAddr","addr"],["coTel","tel"]].forEach(([id,key])=>{
+    const e = document.getElementById(id);
+    e.addEventListener("input", ()=>{
+      CO[key] = e.value;
+      saveCO();
+      document.getElementById("saveState").textContent = "保存済(自社情報)";
+      if (document.getElementById("preview").style.display === "block") render();
+    });
+  });
+}
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return;
+    const o = JSON.parse(raw);
+    const b = blank();
+    // 欠けている項目があっても壊れないように初期値へ差し込む
+    for (const k in b){
+      if (o[k] === undefined) continue;
+      if (Array.isArray(b[k])) b[k] = o[k];
+      else if (typeof b[k] === "object") Object.assign(b[k], o[k]);
+      else b[k] = o[k];
+    }
+    D = b;
+    document.getElementById("saveState").textContent = "前回の続き";
+  }catch(e){ /* 壊れていたら白紙で始める */ }
+}
+
+function showTab(which){
+  const pane = { form:"form", prev:"preview", conf:"settings" };
+  const tab  = { form:"tabForm", prev:"tabPrev", conf:"tabConf" };
+  Object.keys(pane).forEach(k=>{
+    document.getElementById(pane[k]).style.display = (k === which) ? "block" : "none";
+    document.getElementById(tab[k]).setAttribute("aria-selected", String(k === which));
+  });
+  if (which === "prev"){
+    render(); fitPreview(); shrinkToFit();   // 表示された状態で幅を測り直す
+  }
+}
+
+// 画面幅に合わせて帳票を縮小表示
+function fitPreview(){
+  const wrap = document.getElementById("pvwrap");
+  const sc = document.getElementById("pvscale");
+  const sheetW = 174.4 * (96/25.4);           // mm → px
+  const avail = wrap.clientWidth;
+  const k = Math.min(1, avail / sheetW);
+  sc.style.transform = "scale(" + k + ")";
+  sc.style.height = (259 * (96/25.4) * k) + "px";
+}
+
+// PDF の既定ファイル名(Excel版と同じ規則)
+function baseName(){
+  const y = D.dy || new Date().getFullYear();
+  const m = D.dm || (new Date().getMonth()+1);
+  const c = (D.customer || "").trim().replace(/[\\\/:*?"<>|]/g,"_") || "お客様名未入力";
+  return y + "年" + m + "月_" + c + "_作業報告書";
+}
+
+document.getElementById("tabForm").addEventListener("click", ()=>showTab("form"));
+document.getElementById("tabPrev").addEventListener("click", ()=>showTab("prev"));
+document.getElementById("tabConf").addEventListener("click", ()=>showTab("conf"));
+document.getElementById("btnPdf").addEventListener("click", ()=>{
+  // 入力タブのまま押されると帳票の幅が測れず文字が縮まないので、必ず表示してから印刷する
+  showTab("prev");
+  const old = document.title;
+  document.title = baseName();
+  window.print();
+  setTimeout(()=>{ document.title = old; }, 1000);
+});
+document.getElementById("btnClear").addEventListener("click", ()=>{
+  // 消えるのは報告内容だけ。設定タブの自社情報は残す。
+  if (!confirm("入力内容をすべて消して白紙に戻します。\n（設定タブの自社情報は消えません）\nよろしいですか？")) return;
+  D = blank();
+  fillForm();
+  save();
+  render();
+  document.getElementById("saveState").textContent = "白紙に戻しました";
+});
+window.addEventListener("resize", ()=>{
+  if (document.getElementById("preview").style.display === "block") fitPreview();
+});
+
+/* ---- 起動 ---- */
+buildForm();
+bindCO();
+loadCO();
+load();
+fillForm();
+render();
+
+/* ---- オフラインでも開けるようにする(GitHub Pages 公開時のみ有効) ---- */
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("./sw.js").catch(()=>{ /* 失敗しても通常どおり使える */ });
+  });
+}
+</script>
+</body>
+</html>
