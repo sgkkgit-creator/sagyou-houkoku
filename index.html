@@ -89,6 +89,14 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 .tbl th{font-size:11px; color:var(--sub); font-weight:700; padding:2px 4px; text-align:left}
 .tbl td{padding:2px 3px}
 
+/* ---------- サイン欄 ---------- */
+#sigPad{
+  width:100%; height:170px; display:block;
+  background:var(--guide); border:1px solid var(--guide-b); border-radius:8px;
+  touch-action:none;            /* 指で描くときに画面がスクロールしないようにする */
+  cursor:crosshair;
+}
+
 /* ---------- 設定 ---------- */
 #settings{padding:12px 10px calc(90px + var(--safe-b)); display:none}
 .note{font-size:12px; color:var(--sub); margin:0 0 12px; line-height:1.6}
@@ -268,6 +276,21 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
     </div>
   </div>
 
+  <div class="sec">
+    <h2>ご承認サイン</h2>
+    <div class="body">
+      <p class="note">
+        お客様に、指またはタッチペンで下の枠内にサインしていただきます。<br>
+        報告書の「<b>御承認印</b>」欄にそのまま入ります。
+      </p>
+      <canvas id="sigPad"></canvas>
+      <div class="row" style="margin-top:8px">
+        <button class="ghost" id="sigClear">サインを消す</button>
+        <span class="cap" id="sigState">未記入</span>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ================= 設定(自社情報) ================= -->
@@ -328,6 +351,7 @@ function blank(){
     title:"", situation:"", work:"", material:"",
     equip:[{m:"",s:"",p:""},{m:"",s:"",p:""},{m:"",s:"",p:""},{m:"",s:"",p:""}],
     remark:"",
+    sign:"",                       // ご承認サイン(PNG の data URL)
     meas:{hp:"",lp:"",dis:"",suc:"",liq:"",crank:"",amp:""},
     meas2:{in:"",out:""},
     free:[{l:"",v:"",u:""},{l:"",v:"",u:""},{l:"",v:"",u:""},{l:"",v:"",u:""},{l:"",v:"",u:""}]
@@ -530,6 +554,100 @@ function buildForm(){
   });
 }
 
+/* ===================================================================
+   3-2. ご承認サイン
+   指やタッチペンで描いた線を PNG にして D.sign に持たせる。
+   報告書の「御承認印」欄にそのまま貼り付けられる。
+   =================================================================== */
+let sigApi = null;
+
+function initSign(){
+  const cv  = document.getElementById("sigPad");
+  const st  = document.getElementById("sigState");
+  const ctx = cv.getContext("2d");
+  let drawing = false, moved = false;
+
+  function dpr(){ return window.devicePixelRatio || 1; }
+
+  function setStyle(){
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = Math.max(2, 2.2 * dpr());
+  }
+
+  // 画面の実寸に合わせて解像度を用意する(粗くならないように)
+  function resize(){
+    const r = cv.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width  * dpr()));
+    const h = Math.max(1, Math.round(r.height * dpr()));
+    if (cv.width === w && cv.height === h) return;
+    cv.width = w; cv.height = h;
+    setStyle();
+    if (D.sign) draw(D.sign);
+  }
+
+  function draw(url){
+    if (!url){ ctx.clearRect(0,0,cv.width,cv.height); return; }
+    const im = new Image();
+    im.onload = ()=>{
+      ctx.clearRect(0,0,cv.width,cv.height);
+      ctx.drawImage(im, 0, 0, cv.width, cv.height);
+      setStyle();
+    };
+    im.src = url;
+  }
+
+  function pos(e){
+    const r = cv.getBoundingClientRect();
+    return { x:(e.clientX - r.left) * dpr(), y:(e.clientY - r.top) * dpr() };
+  }
+
+  cv.addEventListener("pointerdown", e=>{
+    e.preventDefault();
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+    drawing = true; moved = false;
+    const p = pos(e);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y);
+  });
+  cv.addEventListener("pointermove", e=>{
+    if (!drawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y); ctx.stroke();
+    moved = true;
+  });
+  function finish(){
+    if (!drawing) return;
+    drawing = false;
+    if (!moved) return;
+    D.sign = cv.toDataURL("image/png");
+    st.textContent = "記入済み";
+    touch();
+  }
+  cv.addEventListener("pointerup", finish);
+  cv.addEventListener("pointercancel", finish);
+  cv.addEventListener("pointerleave", finish);
+
+  document.getElementById("sigClear").addEventListener("click", ()=>{
+    ctx.clearRect(0,0,cv.width,cv.height);
+    setStyle();
+    D.sign = "";
+    st.textContent = "未記入";
+    touch();
+  });
+
+  window.addEventListener("resize", resize);
+
+  sigApi = {
+    set(url){
+      resize();
+      draw(url);
+      st.textContent = url ? "記入済み" : "未記入";
+    }
+  };
+  resize();
+}
+
 // 保存済みデータをフォームに戻す
 function fillForm(){
   const set = (id,v) => { const e = document.getElementById(id); if (e) e.value = v || ""; };
@@ -542,6 +660,7 @@ function fillForm(){
   MEAS2.forEach(([k])=> set("m2_"+k, D.meas2[k]));
   D.free.forEach((v,i)=>{ set("frl"+i,v.l); set("frv"+i,v.v); set("fru"+i,v.u); });
   Object.keys(LIMIT).forEach(k=>{ const t=document.getElementById(k); if (t && t._check) t._check(); });
+  if (sigApi) sigApi.set(D.sign);
 }
 
 /* ===================================================================
@@ -841,7 +960,18 @@ function render(){
   add("O47:R47", "御承認印", "ctr f9", "t3 u2 r3");
   add("I48:K52", "", "", "l3 u3 r2");
   add("L48:N52", "", "", "u3 r3");
-  add("O48:R52", "", "", "u3 r3");
+
+  // 御承認印の枠。サインがあれば画像として貼り込む
+  const apr = cell("O48:R52", "", "ctr nofit");
+  if (D.sign){
+    const im = document.createElement("img");
+    im.src = D.sign;
+    im.alt = "";
+    im.style.cssText = "max-width:100%; max-height:100%; object-fit:contain; display:block";
+    apr.style.padding = "1pt 2pt";
+    apr.appendChild(im);
+  }
+  s.appendChild(apr);
 
   shrinkToFit();
 }
@@ -1020,6 +1150,7 @@ window.addEventListener("resize", ()=>{
 
 /* ---- 起動 ---- */
 buildForm();
+initSign();
 bindCO();
 loadCO();
 load();
