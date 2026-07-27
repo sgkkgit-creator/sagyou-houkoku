@@ -81,9 +81,16 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 .row>*{min-width:0}
 .grow{flex:1}
 .w4{flex:0 0 3em} .w5{flex:0 0 4em} .w6{flex:0 0 4.5em}
-/* 「27」と「日」が離れ離れに折り返さないよう、数字と単位はひとかたまりにする */
+/* 「27」と「日」が離れ離れにならないよう、数字と単位はひとかたまりにする */
 .dgrp{display:flex; align-items:center; gap:4px; flex:0 0 auto}
-#today{margin-left:auto; white-space:nowrap; padding:8px 12px}
+/* 報告日: 年月日は必ず横一列。幅は画面に合わせて自動で分け合う */
+.dater{flex-wrap:nowrap}
+.dater .dgrp{flex:1 1 0; min-width:0}
+.dater .dgrp:first-child{flex:1.6 1 0}   /* 年は4桁なので少し広く */
+.dater input{width:auto; flex:1 1 0; min-width:0; padding-left:8px; padding-right:8px}
+.dater .sep{flex:0 0 auto}
+/* 「今日」は横に入りきらないので一段下げ、押しやすい全幅ボタンにする */
+#today{display:block; width:100%; margin-top:8px}
 .sep{flex:0 0 auto; color:var(--sub); font-size:14px}
 .cap{font-size:12px; color:var(--sub); flex:0 0 auto}
 .over{color:var(--warn); font-size:12px; margin-top:4px; font-weight:700; display:none}
@@ -204,12 +211,12 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
     <div class="body">
       <div class="f">
         <label>報告日</label>
-        <div class="row">
-          <span class="dgrp"><input type="text" class="w6" id="dy" inputmode="numeric" placeholder="2026"><span class="sep">年</span></span>
-          <span class="dgrp"><input type="text" class="w4" id="dm" inputmode="numeric" placeholder="7"><span class="sep">月</span></span>
-          <span class="dgrp"><input type="text" class="w4" id="dd" inputmode="numeric" placeholder="27"><span class="sep">日</span></span>
-          <button class="ghost" id="today">今日</button>
+        <div class="row dater">
+          <span class="dgrp"><input type="text" id="dy" inputmode="numeric" placeholder="2026"><span class="sep">年</span></span>
+          <span class="dgrp"><input type="text" id="dm" inputmode="numeric" placeholder="7"><span class="sep">月</span></span>
+          <span class="dgrp"><input type="text" id="dd" inputmode="numeric" placeholder="27"><span class="sep">日</span></span>
         </div>
+        <button class="ghost" id="today">今日の日付を入れる</button>
       </div>
       <div class="f"><label>お客様名</label><input type="text" id="customer"></div>
       <div class="f"><label>ご住所</label><input type="text" id="address"></div>
@@ -869,7 +876,9 @@ function render(){
 
   /* ---- お客様情報 ---- */
   const infoRows = [
-    ["お客様名","A4:B5","C4:I5","customer"],
+    // お客様名だけ元のテンプレートが I 列まで伸びていて下線が長く見えるため、
+    // ご住所・ご担当・ご依頼元と同じ H 列までに揃えている
+    ["お客様名","A4:B5","C4:H5","customer"],
     ["ご住所","A6:B7","C6:H7","address"],
     ["ご担当","A8:B9","C8:H9","contact"],
     ["ご依頼元","A10:B11","C10:H11","client"]
