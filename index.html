@@ -76,10 +76,14 @@ input[type=text],input[type=number],textarea,select{
 }
 textarea{resize:vertical; line-height:1.45}
 input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px; background:#fff}
-.row{display:flex; gap:8px; align-items:center}
+/* 画面の狭いスマホでボタンが見切れないよう、入りきらない要素は折り返す */
+.row{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
 .row>*{min-width:0}
 .grow{flex:1}
-.w4{flex:0 0 4.5em} .w5{flex:0 0 5.5em} .w6{flex:0 0 7em}
+.w4{flex:0 0 3em} .w5{flex:0 0 4em} .w6{flex:0 0 4.5em}
+/* 「27」と「日」が離れ離れに折り返さないよう、数字と単位はひとかたまりにする */
+.dgrp{display:flex; align-items:center; gap:4px; flex:0 0 auto}
+#today{margin-left:auto; white-space:nowrap; padding:8px 12px}
 .sep{flex:0 0 auto; color:var(--sub); font-size:14px}
 .cap{font-size:12px; color:var(--sub); flex:0 0 auto}
 .over{color:var(--warn); font-size:12px; margin-top:4px; font-weight:700; display:none}
@@ -201,10 +205,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
       <div class="f">
         <label>報告日</label>
         <div class="row">
-          <input type="text" class="w6" id="dy" inputmode="numeric" placeholder="2026"><span class="sep">年</span>
-          <input type="text" class="w4" id="dm" inputmode="numeric" placeholder="7"><span class="sep">月</span>
-          <input type="text" class="w4" id="dd" inputmode="numeric" placeholder="27"><span class="sep">日</span>
-          <button class="ghost" id="today" style="padding:8px 10px">今日</button>
+          <span class="dgrp"><input type="text" class="w6" id="dy" inputmode="numeric" placeholder="2026"><span class="sep">年</span></span>
+          <span class="dgrp"><input type="text" class="w4" id="dm" inputmode="numeric" placeholder="7"><span class="sep">月</span></span>
+          <span class="dgrp"><input type="text" class="w4" id="dd" inputmode="numeric" placeholder="27"><span class="sep">日</span></span>
+          <button class="ghost" id="today">今日</button>
         </div>
       </div>
       <div class="f"><label>お客様名</label><input type="text" id="customer"></div>
@@ -1122,18 +1126,39 @@ document.getElementById("btnPdf").addEventListener("click", ()=>{
   // 入力タブのまま押されると帳票の幅が測れず文字が縮まないので、必ず表示してから印刷する
   showTab("prev");
 
-  if (isIOS() && isStandalone()){
-    alert("ホーム画面のアイコンから開いた状態では、iPhone の仕様で PDF 出力ができません。\n\n" +
-          "お手数ですが Safari で次のURLを開いて、そこから PDF 出力してください。\n\n" +
-          location.href + "\n\n" +
-          "（ホーム画面のアイコンを一度削除し、Safari で開き直して追加し直すと、次回から出せるようになります）");
-    return;
-  }
-
   const old = document.title;
   document.title = baseName();
-  window.print();
-  setTimeout(()=>{ document.title = old; }, 1000);
+
+  // まず必ず印刷を試す。実際に印刷画面が開いたかどうかを見張っておき、
+  // 開かなかったときだけ案内を出す(先回りして止めない)。
+  let started = false;
+  const onBefore = () => { started = true; };
+  window.addEventListener("beforeprint", onBefore);
+  let mq = null, onMq = null;
+  try{
+    mq = window.matchMedia("print");
+    onMq = (e) => { if (e.matches) started = true; };
+    if (mq.addEventListener) mq.addEventListener("change", onMq);
+    else if (mq.addListener) mq.addListener(onMq);
+  }catch(_){}
+
+  try{ window.print(); }catch(_){ }
+
+  setTimeout(()=>{
+    window.removeEventListener("beforeprint", onBefore);
+    try{
+      if (mq && onMq){
+        if (mq.removeEventListener) mq.removeEventListener("change", onMq);
+        else if (mq.removeListener) mq.removeListener(onMq);
+      }
+    }catch(_){}
+    document.title = old;
+    if (!started && isIOS()){
+      alert("この開き方では PDF 出力ができないようです。\n\n" +
+            "Safari で次のURLを開いてから、もう一度「PDF出力」を押してください。\n\n" +
+            location.href);
+    }
+  }, 1500);
 });
 document.getElementById("btnClear").addEventListener("click", ()=>{
   // 消えるのは報告内容だけ。設定タブの自社情報は残す。
