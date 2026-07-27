@@ -108,8 +108,11 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    グリッドに割り付けています。時刻が切れないよう P と R だけ
    17→24 に広げてあります(合計 354 分割)。 */
 #sheet{
-  width:174.4mm;           /* A4 210mm - 左右余白 17.8mm x2 */
-  height:259mm;            /* A4 297mm - 上下余白 19mm x2 */
+  /* A4(210x297mm)に対し、用紙余白8mmを足しても 196x281mm。
+     端末が独自の余白(最大12.7mm)を強制してきても 205x290mm で収まる寸法。
+     ここを目一杯にすると1mmの誤差で2ページに割れるため、余裕を持たせている。 */
+  width:180mm;
+  height:265mm;
   background:#fff;
   display:grid;
   grid-template-columns:repeat(354,1fr);
@@ -137,15 +140,19 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 .r3{border-right:1pt solid #000}   .u3{border-bottom:1pt solid #000}
 
 /* ---------- 印刷 ---------- */
-@page{ size:A4 portrait; margin:19mm 17.8mm; }
+@page{ size:A4 portrait; margin:8mm; }
 @media print{
-  body{background:#fff}
-  #bar,#tabs,#form,#pvnote{display:none !important}
-  #preview{display:block !important; padding:0}
-  #pvwrap{overflow:visible; padding:0}
+  html,body{margin:0; padding:0; background:#fff; height:auto; overflow:visible}
+  /* 画面用の部品はすべて消す。
+     特に #foot は position:fixed のため、残すと印刷時にも居座って2ページ目を作る。 */
+  #bar,#tabs,#form,#settings,#pvnote,#foot{display:none !important}
+  #preview{display:block !important; padding:0; margin:0}
+  #pvwrap{overflow:visible; padding:0; margin:0}
   /* 画面用に付けた縮小と高さ指定を解除しないと、印刷が2ページに割れる */
   #pvscale{transform:none !important; height:auto !important; width:auto !important}
-  #sheet{width:100%; height:259mm; box-shadow:none; margin:0}
+  #sheet{box-shadow:none; margin:0; page-break-inside:avoid; break-inside:avoid}
+  /* 帳票の後ろに改ページを作らせない */
+  #sheet::after{content:none}
 }
 #sheet{box-shadow:0 1px 6px rgba(0,0,0,.18)}
 
@@ -806,11 +813,17 @@ function showTab(which){
 function fitPreview(){
   const wrap = document.getElementById("pvwrap");
   const sc = document.getElementById("pvscale");
-  const sheetW = 174.4 * (96/25.4);           // mm → px
-  const avail = wrap.clientWidth;
+  const sh = document.getElementById("sheet");
+  const sheetW = sh.offsetWidth;
+  if (!sheetW) return;
+  // clientWidth は左右paddingを含むので、その分を引かないと横スクロールが出る
+  const cs = getComputedStyle(wrap);
+  const avail = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const k = Math.min(1, avail / sheetW);
   sc.style.transform = "scale(" + k + ")";
-  sc.style.height = (259 * (96/25.4) * k) + "px";
+  // 幅と高さも縮めておかないと、横スクロールバーが出たままになる
+  sc.style.width  = (sheetW * k) + "px";
+  sc.style.height = (sh.offsetHeight * k) + "px";
 }
 
 // PDF の既定ファイル名(Excel版と同じ規則)
