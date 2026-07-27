@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<!-- apple-mobile-web-app-capable は付けない。
+     これを付けると iPhone がホーム画面アプリ(standalone)として起動し、
+     WebKit の制約で印刷(PDF出力)が一切できなくなるため。 -->
 <meta name="apple-mobile-web-app-title" content="作業報告書">
 <meta name="theme-color" content="#1668c1">
 <link rel="manifest" href="./manifest.webmanifest">
@@ -976,9 +977,29 @@ function baseName(){
 document.getElementById("tabForm").addEventListener("click", ()=>showTab("form"));
 document.getElementById("tabPrev").addEventListener("click", ()=>showTab("prev"));
 document.getElementById("tabConf").addEventListener("click", ()=>showTab("conf"));
+// iPhone をホーム画面アプリ(standalone)として起動していると、
+// WebKit の制約で window.print() が何も起こさない。その場合は案内を出す。
+function isIOS(){
+  return /iP(hone|ad|od)/.test(navigator.userAgent) ||
+         (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+function isStandalone(){
+  return window.navigator.standalone === true ||
+         (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
+
 document.getElementById("btnPdf").addEventListener("click", ()=>{
   // 入力タブのまま押されると帳票の幅が測れず文字が縮まないので、必ず表示してから印刷する
   showTab("prev");
+
+  if (isIOS() && isStandalone()){
+    alert("ホーム画面のアイコンから開いた状態では、iPhone の仕様で PDF 出力ができません。\n\n" +
+          "お手数ですが Safari で次のURLを開いて、そこから PDF 出力してください。\n\n" +
+          location.href + "\n\n" +
+          "（ホーム画面のアイコンを一度削除し、Safari で開き直して追加し直すと、次回から出せるようになります）");
+    return;
+  }
+
   const old = document.title;
   document.title = baseName();
   window.print();

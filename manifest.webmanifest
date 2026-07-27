@@ -3,7 +3,7 @@
   "short_name": "作業報告書",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "minimal-ui",
   "orientation": "portrait",
   "background_color": "#f2f4f7",
   "theme_color": "#1668c1",
