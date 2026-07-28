@@ -367,7 +367,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.1";
+const APP_VER = "2.2";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -467,7 +467,7 @@ function digits(s){ const t = toHalf(String(s||"")).replace(/[^\d]/g,""); return
    3. フォームの組み立て
    =================================================================== */
 const MEAS = [
-  ["hp","高圧圧力","mpa"], ["lp","低圧圧力","mpa"], ["dis","吐出温度","℃"],
+  ["hp","高圧圧力","MPa"], ["lp","低圧圧力","MPa"], ["dis","吐出温度","℃"],
   ["suc","吸入温度","℃"], ["liq","液配管温度","℃"], ["crank","クランク","℃"], ["amp","電流値","A"]
 ];
 const MEAS2 = [ ["in","吸込温度","℃"], ["out","吹出温度","℃"] ];
