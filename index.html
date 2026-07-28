@@ -116,6 +116,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;
 }
 #needConf.on{display:block}
+#inputHint{
+  background:#eef5fd; border:1px solid #bcd8f5; color:#1a4d80;
+  border-radius:10px; padding:9px 12px; margin-bottom:12px; font-size:12.5px; line-height:1.6;
+}
 
 /* ---------- プレビュー ---------- */
 #preview{padding:10px 0 calc(90px + var(--safe-b)); display:none}
@@ -156,6 +160,31 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 #sheet .shrink{font-size:8pt}
 /* 罫線だけを敷くマス(文字は入らない) */
 #sheet .g{pointer-events:none; min-width:0; min-height:0}
+/* タップで編集できる値マス。薄く色を付けて押せる場所を示す(印刷時は消す) */
+#sheet .c.tap{cursor:pointer; background:rgba(22,104,193,.06)}
+#sheet .c.tap:active{background:rgba(22,104,193,.20)}
+
+/* ---------- 下から出る編集シート ---------- */
+#editSheet{position:fixed; inset:0; z-index:200; display:none}
+#editSheet.on{display:block}
+#editSheet .es-back{position:absolute; inset:0; background:rgba(0,0,0,.35)}
+#editSheet .es-panel{
+  position:absolute; left:0; right:0; bottom:0; background:#fff;
+  border-radius:14px 14px 0 0; box-shadow:0 -4px 20px rgba(0,0,0,.25);
+  padding:14px 14px calc(14px + var(--safe-b)); max-height:80vh; overflow:auto;
+  animation:esUp .18s ease-out;
+}
+@keyframes esUp{ from{transform:translateY(100%)} to{transform:translateY(0)} }
+#editSheet .es-title{font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink)}
+#editSheet .es-body .f{margin-bottom:10px}
+#editSheet .es-body label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px; font-weight:700}
+#editSheet .es-row{display:flex; gap:8px; align-items:center}
+#editSheet .es-btns{display:flex; gap:8px; margin-top:6px}
+#editSheet .es-btns button{flex:1}
+#editSheet .es-hintline{font-size:11px; color:var(--sub); margin-top:2px}
+#editSheet canvas{width:100%; height:150px; background:var(--guide); border:1px solid var(--guide-b); border-radius:8px; touch-action:none; display:block}
+/* プレビュー上部の使い方ヒント */
+#tapHint{font-size:12px; color:var(--sub); padding:0 14px 8px}
 /* 罫線: 1=極細 2=細 3=中
    0.25pt だと iPhone(iOS Safari)が「1ドット未満」と判断して線を捨ててしまい、
    極細の罫線だけがPDFから消える。どの端末でも必ず描かれるよう
@@ -173,7 +202,9 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   html,body{margin:0; padding:0; background:#fff; height:auto; overflow:visible}
   /* 画面用の部品はすべて消す。
      特に #foot は position:fixed のため、残すと印刷時にも居座って2ページ目を作る。 */
-  #bar,#tabs,#form,#settings,#pvnote,#foot{display:none !important}
+  #bar,#tabs,#form,#settings,#pvnote,#tapHint,#foot,#editSheet{display:none !important}
+  /* タップ用の色は紙に出さない */
+  #sheet .c.tap{background:transparent !important}
   #preview{display:block !important; padding:0; margin:0}
   #pvwrap{overflow:visible; padding:0; margin:0}
   /* 画面用に付けた縮小と高さ指定を解除しないと、印刷が2ページに割れる */
@@ -212,6 +243,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   <div id="needConf">
     はじめに「<b>設定</b>」タブで自社名・住所・電話番号を登録してください。<br>
     登録は<b>この端末に1回だけ</b>で、以降は報告書の右上に印刷されます。
+  </div>
+
+  <div id="inputHint">
+    💡 この一覧から入力するほか、「<b>プレビュー</b>」タブで報告書の色つきマスを<b>タップ</b>しても、その欄を直接入力できます。
   </div>
 
   <div class="sec">
@@ -350,6 +385,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 
 <!-- ================= プレビュー ================= -->
 <div id="preview">
+  <div id="tapHint">💡 報告書の色つきのマスを<b>タップ</b>すると、その欄を直接入力できます。</div>
   <div id="pvnote">下の「PDF出力」を押し、印刷画面で「PDFとして保存」を選んでください。</div>
   <div id="pvwrap"><div id="pvscale"><div id="sheet"></div></div></div>
 </div>
@@ -357,6 +393,16 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 <div id="foot">
   <button class="ghost" id="btnClear">入力クリア</button>
   <button class="primary" id="btnPdf">PDF出力</button>
+</div>
+
+<!-- タップした欄をその場で編集するシート -->
+<div id="editSheet">
+  <div class="es-back"></div>
+  <div class="es-panel">
+    <div class="es-title"></div>
+    <div class="es-body"></div>
+    <div class="es-btns"></div>
+  </div>
 </div>
 
 <script>
@@ -367,7 +413,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.2";
+const APP_VER = "2.3";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -927,13 +973,16 @@ function drawGrid(s){
   }
 }
 
-// 複数行欄: 1行ずつ別の行セルに入れる(Excelと同じ)
-function multi(sheet, startRow, maxRows, colFrom, colTo, value, cls){
+// 複数行欄: 1行ずつ別の行セルに入れる(Excelと同じ)。
+// editKey を渡すと各行がタップで編集できる(どの行を押しても同じ欄が開く)。
+function multi(sheet, startRow, maxRows, colFrom, colTo, value, cls, editKey){
   const lines = trimTail(value || "").split("\n");
   for (let i=0;i<maxRows;i++){
     const r = startRow + i;
     const bd = "l3 r3 " + (i===0 ? "t3 " : "") + (i===maxRows-1 ? "u3" : "");
-    sheet.appendChild(cell(colFrom+r+":"+colTo+r, lines[i] || "", cls||"f11", bd));
+    const d = cell(colFrom+r+":"+colTo+r, lines[i] || "", (cls||"f11") + (editKey?" tap":""));
+    if (editKey) d.dataset.edit = editKey;
+    sheet.appendChild(d);
   }
 }
 
@@ -942,18 +991,27 @@ function render(){
   s.textContent = "";
   drawGrid(s);                       // 先に罫線を全マスへ敷く
   const add = (...a) => s.appendChild(cell(...a));
+  // addv = タップで編集できる値セル。data-edit にどの欄かを持たせる。
+  // add と同じく罫線引数(無視)が入る呼び出しもあるので、キーは「最後の引数」で受ける。
+  const addv = (range,text,cls,a,b)=>{
+    const key = (b !== undefined) ? b : a;
+    const d = cell(range, text, (cls||"") + " tap");
+    d.dataset.edit = key;
+    s.appendChild(d);
+    return d;
+  };
 
   /* ---- 見出し ---- */
   add("F1:L2", "作 業 報 告 書", "ctr b f18");
   add("M2", "報告日", "ctr f10");
-  add("O2", D.dy ? D.dy+"年" : "年", "ctr f9");
-  add("P2:Q2", D.dm ? D.dm+"月" : "月", "ctr f9");
-  add("R2", D.dd ? D.dd+"日" : "日", "ctr f9");
+  addv("O2", D.dy ? D.dy+"年" : "年", "ctr f9", "rdate");
+  addv("P2:Q2", D.dm ? D.dm+"月" : "月", "ctr f9", "rdate");
+  addv("R2", D.dd ? D.dd+"日" : "日", "ctr f9", "rdate");
 
   // 自社情報は「設定」タブで登録したものを使う(未登録なら空欄のまま印刷される)
-  add("K4:R5", CO.name, "ctr b f14");
-  add("K6:R6", CO.addr, "f10");
-  add("K7:R7", CO.tel,  "f10");
+  addv("K4:R5", CO.name, "ctr b f14", "co");
+  addv("K6:R6", CO.addr, "f10", "co");
+  addv("K7:R7", CO.tel,  "f10", "co");
 
   /* ---- お客様情報 ---- */
   const infoRows = [
@@ -966,7 +1024,7 @@ function render(){
   ];
   infoRows.forEach(([lab,lr,vr,key])=>{
     add(lr, lab, "ctr f10", "l3 t2 u2 r2");
-    add(vr, D[key], "f11 val", "t2 u2 r2");
+    addv(vr, D[key], "f11 val", "t2 u2 r2", "text:"+key);
   });
 
   /* ---- 作業者・作業日時の表 ---- */
@@ -974,16 +1032,16 @@ function render(){
   add("M8:N8", "作業者",   "ctr f8", "t3 u1 r1");
   add("O8",    "作業日",   "ctr f8", "t3 u1 r1");
   add("P8:R8", "時間",     "ctr f8", "t3 u1 r3");
-  add("K9:L11", D.chief, "ctr f10 val", "l3 u3 r1");
+  addv("K9:L11", D.chief, "ctr f10 val", "l3 u3 r1", "text:chief");
   for (let i=0;i<3;i++){
     const r = 9+i;
     const last = (i===2) ? "u3 " : "";
-    add("M"+r, D.workers[i*2]   || "", "f8 val", last+"r1");
-    add("N"+r, D.workers[i*2+1] || "", "f8 val", last+"r1");
-    add("O"+r, D.days[i].d || "/", "ctr f8", last+"r1");
-    add("P"+r, D.days[i].s || ":", "ctr f8", last);
+    addv("M"+r, D.workers[i*2]   || "", "f8 val", last+"r1", "worker:"+(i*2));
+    addv("N"+r, D.workers[i*2+1] || "", "f8 val", last+"r1", "worker:"+(i*2+1));
+    addv("O"+r, D.days[i].d || "/", "ctr f8", last+"r1", "date:"+i);
+    addv("P"+r, D.days[i].s || ":", "ctr f8", last, "time:beg:"+i);
     add("Q"+r, "〜",               "ctr f8", last);
-    add("R"+r, D.days[i].e || ":", "ctr f8", last+"r3");
+    addv("R"+r, D.days[i].e || ":", "ctr f8", last+"r3", "time:end:"+i);
   }
 
   /* ---- 件名・状況・作業内容・使用材料 ---- */
@@ -995,7 +1053,7 @@ function render(){
   ];
   blocks.forEach(([lab,lr,start,max,key])=>{
     add(lr, lab, "ctr f10", "l3 t3 u3 r3");
-    multi(s, start, max, "C", "R", D[key]);
+    multi(s, start, max, "C", "R", D[key], "f11", "multi:"+key);
   });
 
   /* ---- 修理機器 ---- */
@@ -1007,9 +1065,9 @@ function render(){
     const r = 41+i;
     const last = (i===3) ? "u3 " : "";
     add("A"+r+":B"+r, EQUIP_LABEL[i], "f9", "l3 "+last+"r3");
-    add("C"+r+":H"+r, D.equip[i].m, "ctr f10 val", last+"r1");
-    add("I"+r+":L"+r, D.equip[i].s, "ctr f10 val", last+"r1");
-    add("M"+r+":R"+r, D.equip[i].p, "ctr f10 val", last+"r3");
+    addv("C"+r+":H"+r, D.equip[i].m, "ctr f10 val", last+"r1", "eqm:"+i);
+    addv("I"+r+":L"+r, D.equip[i].s, "ctr f10 val", last+"r1", "eqs:"+i);
+    addv("M"+r+":R"+r, D.equip[i].p, "ctr f10 val", last+"r3", "eqp:"+i);
   }
 
   /* ---- 運転データ ---- */
@@ -1019,27 +1077,28 @@ function render(){
     const r = 46+i;
     const last = (i===MEAS.length-1) ? "u3 " : "";
     add("A"+r+":B"+r, l, "f9", "l3 "+last);
-    add("C"+r, D.meas[k], "rgt f10 val", last);
+    addv("C"+r, D.meas[k], "rgt f10 val", last, "meas:"+k);
     add("D"+r, u, "f8", last+"r3");        // 単位はExcelと同じく常に印刷する
   });
   // 右ブロック(固定2項目 + 自由記入5行)
   MEAS2.forEach(([k,l,u],i)=>{
     const r = 46+i;
     add("E"+r+":F"+r, l, "f10", "t"+(i===0?"3":"1")+" r1");
-    add("G"+r, D.meas2[k], "rgt f10 val", "t"+(i===0?"3":"1"));
+    addv("G"+r, D.meas2[k], "rgt f10 val", "t"+(i===0?"3":"1"), "meas2:"+k);
     add("H"+r, u, "f8", "t"+(i===0?"3":"1")+" r3");   // 単位は常に印刷する
   });
   for (let i=0;i<5;i++){
     const r = 48+i;
     const last = (i===4) ? "u3 " : "";
-    add("E"+r+":F"+r, D.free[i].l, "f10 val", last+"r1");
-    add("G"+r, D.free[i].v, "rgt f10 val", last);
-    add("H"+r, D.free[i].u, "f8", last+"r3");
+    addv("E"+r+":F"+r, D.free[i].l, "f10 val", last+"r1", "free:l:"+i);
+    addv("G"+r, D.free[i].v, "rgt f10 val", last, "free:v:"+i);
+    addv("H"+r, D.free[i].u, "f8", last+"r3", "free:u:"+i);
   }
 
   /* ---- 備考 ---- */
   const rem = trimTail(D.remark||"").split("\n");
-  const remBox = cell("I45:R46", "", "f9 nofit", "l3 t3 u3 r3");
+  const remBox = cell("I45:R46", "", "f9 nofit tap");
+  remBox.dataset.edit = "multi:remark";
   remBox.style.alignItems = "flex-start";
   remBox.style.whiteSpace = "pre-wrap";
   remBox.style.lineHeight = "1.25";
@@ -1055,8 +1114,9 @@ function render(){
   add("I48:K52", "", "", "l3 u3 r2");
   add("L48:N52", "", "", "u3 r3");
 
-  // 御承認印の枠。サインがあれば画像として貼り込む
-  const apr = cell("O48:R52", "", "ctr nofit");
+  // 御承認印の枠。サインがあれば画像として貼り込む。タップでサイン入力を開く
+  const apr = cell("O48:R52", "", "ctr nofit tap");
+  apr.dataset.edit = "sign";
   if (D.sign){
     const im = document.createElement("img");
     im.src = D.sign;
@@ -1197,6 +1257,224 @@ function baseName(){
   const c = (D.customer || "").trim().replace(/[\\\/:*?"<>|]/g,"_") || "お客様名未入力";
   return y + "年" + m + "月_" + c + "_作業報告書";
 }
+
+/* ===================================================================
+   5-2. タップした欄をその場で編集するシート
+   報告書のマスをタップ → 下から編集シートが出る → 打つと即プレビュー反映。
+   入力タブの各欄と同じ整形ルール(時刻・日付・行数)を使う。
+   =================================================================== */
+function renderPreview(){ render(); shrinkToFit(); }
+
+const EQ_LABEL = ["修理機器の型名","熱源機の型名","リモコンの型名","集中管理の型名"];
+
+function openEditor(key){
+  const sheet = document.getElementById("editSheet");
+  const titleEl = sheet.querySelector(".es-title");
+  const bodyEl  = sheet.querySelector(".es-body");
+  const btnsEl  = sheet.querySelector(".es-btns");
+  bodyEl.innerHTML = ""; btnsEl.innerHTML = "";
+
+  // 部品づくり
+  const mkText = (val, ph, mode) => {
+    const i = document.createElement("input");
+    i.type = "text"; i.value = val || ""; if (ph) i.placeholder = ph;
+    if (mode) i.inputMode = mode;
+    return i;
+  };
+  const mkArea = (val, rows) => {
+    const t = document.createElement("textarea");
+    t.value = val || ""; t.rows = rows || 4; t.style.lineHeight = "1.45";
+    return t;
+  };
+  const field = (labelText, control, hint) => {
+    const f = document.createElement("div"); f.className = "f";
+    const l = document.createElement("label"); l.textContent = labelText; f.appendChild(l);
+    f.appendChild(control);
+    if (hint){ const h=document.createElement("div"); h.className="es-hintline"; h.textContent=hint; f.appendChild(h); }
+    bodyEl.appendChild(f);
+    return control;
+  };
+  const btn = (label, cls, fn) => {
+    const b = document.createElement("button"); b.textContent = label; b.className = cls;
+    b.addEventListener("click", fn); btnsEl.appendChild(b); return b;
+  };
+  const commit = ()=>{ save(); renderPreview(); };
+
+  const parts = key.split(":");
+  let firstInput = null;
+
+  if (key === "rdate"){
+    titleEl.textContent = "報告日";
+    const row = document.createElement("div"); row.className="es-row";
+    const yi = mkText(D.dy,"2026","numeric"); yi.style.flex="1.6";
+    const mi = mkText(D.dm,"7","numeric");    mi.style.flex="1";
+    const di = mkText(D.dd,"27","numeric");   di.style.flex="1";
+    const wrap=(inp,unit)=>{ const s=document.createElement("span"); s.className="es-row"; s.style.flex=inp.style.flex; s.appendChild(inp); const u=document.createElement("span"); u.className="sep"; u.textContent=unit; s.appendChild(u); return s; };
+    row.appendChild(wrap(yi,"年")); row.appendChild(wrap(mi,"月")); row.appendChild(wrap(di,"日"));
+    const f=document.createElement("div"); f.className="f"; f.appendChild(row); bodyEl.appendChild(f);
+    yi.addEventListener("input",()=>{ D.dy=digits(yi.value); commit(); });
+    mi.addEventListener("input",()=>{ D.dm=digits(mi.value); commit(); });
+    di.addEventListener("input",()=>{ D.dd=digits(di.value); commit(); });
+    [yi,mi,di].forEach(i=>i.addEventListener("blur",()=>{ i.value=digits(i.value); }));
+    btn("今日","ghost",()=>{ const n=new Date(); D.dy=""+n.getFullYear(); D.dm=""+(n.getMonth()+1); D.dd=""+n.getDate(); yi.value=D.dy; mi.value=D.dm; di.value=D.dd; commit(); });
+    firstInput = yi;
+  }
+  else if (key === "co"){
+    titleEl.textContent = "自社情報（この端末に保存）";
+    const n=field("会社名", mkText(CO.name,"○○株式会社"));
+    const a=field("住所",   mkText(CO.addr,"東京都○○区…"));
+    const t=field("電話・FAX", mkText(CO.tel,"TEL 03-…　FAX 03-…"));
+    n.addEventListener("input",()=>{ CO.name=n.value; saveCO(); renderPreview(); });
+    a.addEventListener("input",()=>{ CO.addr=a.value; saveCO(); renderPreview(); });
+    t.addEventListener("input",()=>{ CO.tel=t.value; saveCO(); renderPreview(); });
+    firstInput = n;
+  }
+  else if (parts[0] === "text"){
+    const map={customer:"お客様名",address:"ご住所",contact:"ご担当",client:"ご依頼元",chief:"作業責任者"};
+    const k=parts[1];
+    titleEl.textContent = map[k]||k;
+    const i=field(map[k]||k, mkText(D[k]));
+    i.addEventListener("input",()=>{ D[k]=i.value; commit(); });
+    firstInput=i;
+  }
+  else if (parts[0] === "worker"){
+    const idx=+parts[1];
+    titleEl.textContent = "作業者 "+(idx+1)+"人目";
+    const i=field("氏名", mkText(D.workers[idx]));
+    i.addEventListener("input",()=>{ D.workers[idx]=i.value; commit(); });
+    firstInput=i;
+  }
+  else if (parts[0] === "date"){
+    const idx=+parts[1];
+    titleEl.textContent = "作業日 "+(idx+1)+"行目";
+    const i=field("作業日", mkText(D.days[idx].d,"7/27","numeric"), "「727」でも自動で 7/27 になります");
+    i.addEventListener("input",()=>{ D.days[idx].d=i.value; commit(); });
+    i.addEventListener("blur",()=>{ const v=normalizeMD(i.value); if(v){ i.value=v; D.days[idx].d=v; commit(); } });
+    firstInput=i;
+  }
+  else if (parts[0] === "time"){
+    const which=parts[1], idx=+parts[2];
+    titleEl.textContent = (which==="beg"?"開始時刻 ":"終了時刻 ")+(idx+1)+"行目";
+    const cur = which==="beg"? D.days[idx].s : D.days[idx].e;
+    const i=field("時刻", mkText(cur,"9:00","numeric"), "「900」でも自動で 9:00 になります");
+    const wr=(v)=>{ if(which==="beg") D.days[idx].s=v; else D.days[idx].e=v; };
+    i.addEventListener("input",()=>{ wr(i.value); commit(); });
+    i.addEventListener("blur",()=>{ const v=normalizeTime(i.value); if(v){ i.value=v; wr(v); commit(); } });
+    firstInput=i;
+  }
+  else if (parts[0] === "multi"){
+    const k=parts[1];
+    const nameMap={title:"件名",situation:"状況",work:"作業内容",material:"使用材料",remark:"備考"};
+    const max=LIMIT[k];
+    titleEl.textContent = (nameMap[k]||k)+(max?"（最大"+max+"行）":"");
+    const t=mkArea(D[k], k==="work"?10:(max?Math.max(3,max):3));
+    const warn=document.createElement("div"); warn.className="over"; warn.style.display="none";
+    field(nameMap[k]||k, t); bodyEl.appendChild(warn);
+    const check=()=>{
+      D[k]=t.value;
+      if(max){
+        const n=lineCount(t.value);
+        if(n>max){ warn.textContent="行数が枠("+max+"行)を超えています。現在 "+n+" 行。はみ出した分は印刷されません。"; warn.style.display="block"; }
+        else warn.style.display="none";
+      }
+      commit();
+    };
+    t.addEventListener("input",check);
+    firstInput=t;
+  }
+  else if (parts[0]==="eqm"||parts[0]==="eqs"||parts[0]==="eqp"){
+    const idx=+parts[1];
+    const fmap={eqm:["型名",EQ_LABEL[idx]],eqs:["製造番号",EQUIP_LABEL[idx]+" 製造番号"],eqp:["系統名・据付場所",EQUIP_LABEL[idx]+" 据付場所"]};
+    const prop={eqm:"m",eqs:"s",eqp:"p"}[parts[0]];
+    titleEl.textContent = fmap[parts[0]][1];
+    const i=field(fmap[parts[0]][0], mkText(D.equip[idx][prop]));
+    i.addEventListener("input",()=>{ D.equip[idx][prop]=i.value; commit(); });
+    firstInput=i;
+  }
+  else if (parts[0]==="meas"){
+    const k=parts[1]; const row=MEAS.find(m=>m[0]===k);
+    titleEl.textContent = row[1]+"（"+row[2]+"）";
+    const i=field(row[1], mkText(D.meas[k],"",row[2]==="A"||row[2].indexOf("Pa")>=0?"decimal":"decimal"));
+    i.addEventListener("input",()=>{ D.meas[k]=i.value; commit(); });
+    firstInput=i;
+  }
+  else if (parts[0]==="meas2"){
+    const k=parts[1]; const row=MEAS2.find(m=>m[0]===k);
+    titleEl.textContent = row[1]+"（"+row[2]+"）";
+    const i=field(row[1], mkText(D.meas2[k],"","decimal"));
+    i.addEventListener("input",()=>{ D.meas2[k]=i.value; commit(); });
+    firstInput=i;
+  }
+  else if (parts[0]==="free"){
+    const kind=parts[1], idx=+parts[2];
+    const nm={l:"見出し",v:"数値",u:"単位"}[kind];
+    const prop={l:"l",v:"v",u:"u"}[kind];
+    titleEl.textContent = "自由記入 "+(idx+1)+"行目・"+nm;
+    const i=field(nm, mkText(D.free[idx][prop]));
+    i.addEventListener("input",()=>{ D.free[idx][prop]=i.value; commit(); });
+    firstInput=i;
+  }
+  else if (key === "sign"){
+    titleEl.textContent = "ご承認サイン";
+    const cv=document.createElement("canvas");
+    const f=document.createElement("div"); f.className="f"; f.appendChild(cv); bodyEl.appendChild(f);
+    const ctx=cv.getContext("2d");
+    const dpr=()=>window.devicePixelRatio||1;
+    function setStyle(){ ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#111"; ctx.lineWidth=Math.max(2,2.2*dpr()); }
+    function fit(){ const r=cv.getBoundingClientRect(); cv.width=Math.round(r.width*dpr()); cv.height=Math.round(r.height*dpr()); setStyle(); if(D.sign){ const im=new Image(); im.onload=()=>{ctx.clearRect(0,0,cv.width,cv.height);ctx.drawImage(im,0,0,cv.width,cv.height);setStyle();}; im.src=D.sign; } }
+    let drawing=false, moved=false;
+    const pos=e=>{ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*dpr(), y:(e.clientY-r.top)*dpr()}; };
+    cv.addEventListener("pointerdown",e=>{ e.preventDefault(); try{cv.setPointerCapture(e.pointerId);}catch(_){}; drawing=true; moved=false; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
+    cv.addEventListener("pointermove",e=>{ if(!drawing)return; e.preventDefault(); const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); moved=true; });
+    const fin=()=>{ if(!drawing)return; drawing=false; if(!moved)return; D.sign=cv.toDataURL("image/png"); commit(); };
+    cv.addEventListener("pointerup",fin); cv.addEventListener("pointercancel",fin); cv.addEventListener("pointerleave",fin);
+    setTimeout(fit,30);
+    btn("サインを消す","ghost",()=>{ ctx.clearRect(0,0,cv.width,cv.height); setStyle(); D.sign=""; commit(); });
+  }
+  else {
+    titleEl.textContent = "入力";
+  }
+
+  // 共通ボタン
+  if (key !== "sign" && key !== "co" && key !== "rdate"){
+    btn("この欄を空にする","ghost",()=>{ clearField(key); closeEditor(); });
+  }
+  btn("閉じる","primary", closeEditor);
+
+  sheet.classList.add("on");
+  if (firstInput){ setTimeout(()=>{ firstInput.focus(); if(firstInput.select) try{firstInput.select();}catch(_){} }, 60); }
+}
+
+// 「この欄を空にする」用
+function clearField(key){
+  const p=key.split(":");
+  if(p[0]==="text") D[p[1]]="";
+  else if(p[0]==="worker") D.workers[+p[1]]="";
+  else if(p[0]==="date") D.days[+p[1]].d="";
+  else if(p[0]==="time"){ if(p[1]==="beg") D.days[+p[2]].s=""; else D.days[+p[2]].e=""; }
+  else if(p[0]==="multi") D[p[1]]="";
+  else if(p[0]==="eqm") D.equip[+p[1]].m="";
+  else if(p[0]==="eqs") D.equip[+p[1]].s="";
+  else if(p[0]==="eqp") D.equip[+p[1]].p="";
+  else if(p[0]==="meas") D.meas[p[1]]="";
+  else if(p[0]==="meas2") D.meas2[p[1]]="";
+  else if(p[0]==="free") D.free[+p[2]][p[1]]="";
+  save(); renderPreview();
+}
+
+function closeEditor(){
+  document.getElementById("editSheet").classList.remove("on");
+  fillForm();   // 入力タブ側の表示も最新に合わせる
+  save();
+}
+
+// プレビューのマスをタップしたら編集シートを開く
+document.getElementById("sheet").addEventListener("click", (e)=>{
+  const cell = e.target.closest("[data-edit]");
+  if (!cell) return;
+  openEditor(cell.dataset.edit);
+});
+document.querySelector("#editSheet .es-back").addEventListener("click", closeEditor);
 
 document.getElementById("tabForm").addEventListener("click", ()=>showTab("form"));
 document.getElementById("tabPrev").addEventListener("click", ()=>showTab("prev"));
