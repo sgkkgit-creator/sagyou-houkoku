@@ -321,6 +321,17 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
     </div>
   </div>
   <div class="sec">
+    <h2>この端末の版</h2>
+    <div class="body">
+      <p class="note">
+        版: <b><span id="appVer"></span></b><br>
+        すべての端末でこの番号がそろっているか確かめてください。<br>
+        違う番号の端末があれば、その端末で一度オンラインにしてから開き直すと最新になります。
+      </p>
+    </div>
+  </div>
+
+  <div class="sec">
     <h2>この端末の保存について</h2>
     <div class="body">
       <p class="note">
@@ -348,6 +359,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 /* ===================================================================
    1. データ
    =================================================================== */
+// 端末ごとに版が食い違っていないか確かめるための番号。
+// index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
+const APP_VER = "1.8";
+
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
 // 自社情報は入力データとは別に保存する(「入力クリア」で消えないようにするため)
@@ -1238,6 +1253,7 @@ window.addEventListener("resize", ()=>{
 });
 
 /* ---- 起動 ---- */
+document.getElementById("appVer").textContent = APP_VER;
 buildForm();
 initSign();
 bindCO();

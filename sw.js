@@ -4,7 +4,7 @@
    ・バージョンを上げるとき（新しいindex.htmlを上げるとき）は、下のCACHE名の末尾を変える
      → ブラウザが更新を検知し、古いキャッシュを自動で捨てて最新化します
 */
-const CACHE = 'sagyou-houkoku-v1_7';
+const CACHE = 'sagyou-houkoku-v1_8';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -25,10 +25,13 @@ self.addEventListener('fetch', (e) => {
   const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
   if (isHTML) {
     // ネットワーク優先（最新を取りに行き、取れたらキャッシュ更新。ダメならキャッシュ）
+    // cache:'reload' でブラウザ自身のキャッシュも迂回する。
+    // これを付けないと、端末に古いHTMLが residual として残り、
+    // 端末ごとに版が食い違う(iPhoneだけ古い罫線のまま等)ことがある。
     e.respondWith(
-      fetch(req)
+      fetch(new Request(req.url, { cache: 'reload', credentials: 'same-origin' }))
         .then((resp) => { const copy = resp.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return resp; })
-        .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+        .catch(() => fetch(req).catch(() => caches.match(req).then((r) => r || caches.match('./index.html'))))
     );
   } else {
     // キャッシュ優先
