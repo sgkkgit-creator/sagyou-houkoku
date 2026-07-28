@@ -111,6 +111,14 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 /* ---------- 設定 ---------- */
 #settings{padding:12px 10px calc(90px + var(--safe-b)); display:none}
 .note{font-size:12px; color:var(--sub); margin:0 0 12px; line-height:1.6}
+/* 区分名などの選択ボタン */
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px}
+.chip{
+  padding:8px 13px; border:1px solid var(--guide-b); border-radius:18px;
+  background:#fff; color:var(--ink); font:inherit; font-size:13px; line-height:1; cursor:pointer;
+}
+.chip:active{background:var(--guide)}
+.chip.on{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700}
 #needConf{
   display:none; background:#fff6e5; border:1px solid #e0b96a; color:#7a5200;
   border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;
@@ -413,7 +421,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.3";
+const APP_VER = "2.4";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -429,7 +437,8 @@ function blank(){
     workers:["","","","","",""],
     days:[{d:"",s:"",e:""},{d:"",s:"",e:""},{d:"",s:"",e:""}],
     title:"", situation:"", work:"", material:"",
-    equip:[{m:"",s:"",p:""},{m:"",s:"",p:""},{m:"",s:"",p:""},{m:"",s:"",p:""}],
+    // cat=区分名(プルダウンで選択・手入力可)。初期値は従来の4区分
+    equip:[{cat:"修理機器",m:"",s:"",p:""},{cat:"熱源機",m:"",s:"",p:""},{cat:"リモコン",m:"",s:"",p:""},{cat:"集中管理",m:"",s:"",p:""}],
     remark:"",
     sign:"",                       // ご承認サイン(PNG の data URL)
     meas:{hp:"",lp:"",dis:"",suc:"",liq:"",crank:"",amp:""},
@@ -518,6 +527,8 @@ const MEAS = [
 ];
 const MEAS2 = [ ["in","吸込温度","℃"], ["out","吹出温度","℃"] ];
 const EQUIP_LABEL = ["修理機器","熱源機","リモコン","集中管理"];
+// 区分名プルダウンの初期候補(手入力も可)
+const CAT_OPTIONS = ["修理機器","熱源機","リモコン","集中管理","室内機","室外機","冷却塔","ポンプ","その他"];
 
 function el(tag, attrs, kids){
   const e = document.createElement(tag);
@@ -528,6 +539,22 @@ function el(tag, attrs, kids){
   }
   (kids||[]).forEach(k => e.appendChild(k));
   return e;
+}
+
+/* 区分名の選択ボタン(チップ)を作る。押すと inputEl に入る＋ onPick を呼ぶ。
+   スマホでもプルダウンの矢印に頼らず、ボタンで確実に選べる。手入力も併用可。 */
+function buildCatChips(inputEl, onPick){
+  const wrap = el("div",{class:"chips"});
+  CAT_OPTIONS.forEach(v=>{
+    const b = el("button",{type:"button",class:"chip",text:v});
+    b.addEventListener("click", ()=>{ inputEl.value = v; onPick(v); markChip(wrap, v); });
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+// 現在値に一致するチップを目立たせる
+function markChip(wrap, val){
+  wrap.querySelectorAll(".chip").forEach(b=> b.classList.toggle("on", b.textContent===val));
 }
 
 function buildForm(){
@@ -559,14 +586,19 @@ function buildForm(){
   // 修理機器 4行
   const eq = document.getElementById("equip");
   for (let i=0;i<4;i++){
+    // 区分名は「ボタンで選ぶ＋手入力」。行の見出しとして報告書A列に出る
+    const cat = el("input",{type:"text",id:"eqcat"+i,placeholder:"区分名（下のボタンで選ぶ・手入力）"});
+    const chips = buildCatChips(cat, (v)=>{ D.equip[i].cat = v; touch(); });
     const m = el("input",{type:"text",id:"eqm"+i,placeholder:"型名"});
     const s = el("input",{type:"text",id:"eqs"+i,placeholder:"製造番号"});
     const p = el("input",{type:"text",id:"eqp"+i,placeholder:"系統名・据付場所"});
+    cat.addEventListener("input", ()=>{ D.equip[i].cat = cat.value; touch(); });
     m.addEventListener("input", ()=>{ D.equip[i].m = m.value; touch(); });
     s.addEventListener("input", ()=>{ D.equip[i].s = s.value; touch(); });
     p.addEventListener("input", ()=>{ D.equip[i].p = p.value; touch(); });
     eq.appendChild(el("div",{class:"f"},[
-      el("label",{text:EQUIP_LABEL[i]}), m,
+      el("label",{text:"区分名"}), cat, chips,
+      el("div",{style:"margin-top:10px"},[m]),
       el("div",{class:"grid3",style:"margin-top:8px"},[s,p])
     ]));
   }
@@ -735,7 +767,12 @@ function fillForm(){
    "title","situation","work","material"].forEach(k => set(k, D[k]));
   D.workers.forEach((v,i)=> set("worker"+i, v));
   D.days.forEach((v,i)=>{ set("day"+i,v.d); set("beg"+i,v.s); set("end"+i,v.e); });
-  D.equip.forEach((v,i)=>{ set("eqm"+i,v.m); set("eqs"+i,v.s); set("eqp"+i,v.p); });
+  D.equip.forEach((v,i)=>{
+    set("eqcat"+i,v.cat); set("eqm"+i,v.m); set("eqs"+i,v.s); set("eqp"+i,v.p);
+    // 区分名の選択ボタンの色も現在値に合わせる
+    const ci=document.getElementById("eqcat"+i);
+    if(ci && ci.parentElement){ const chips=ci.parentElement.querySelector(".chips"); if(chips) markChip(chips, v.cat); }
+  });
   MEAS.forEach(([k])=> set("m_"+k, D.meas[k]));
   MEAS2.forEach(([k])=> set("m2_"+k, D.meas2[k]));
   D.free.forEach((v,i)=>{ set("frl"+i,v.l); set("frv"+i,v.v); set("fru"+i,v.u); });
@@ -1064,7 +1101,7 @@ function render(){
   for (let i=0;i<4;i++){
     const r = 41+i;
     const last = (i===3) ? "u3 " : "";
-    add("A"+r+":B"+r, EQUIP_LABEL[i], "f9", "l3 "+last+"r3");
+    addv("A"+r+":B"+r, D.equip[i].cat, "f9", "l3 "+last+"r3", "eqcat:"+i);
     addv("C"+r+":H"+r, D.equip[i].m, "ctr f10 val", last+"r1", "eqm:"+i);
     addv("I"+r+":L"+r, D.equip[i].s, "ctr f10 val", last+"r1", "eqs:"+i);
     addv("M"+r+":R"+r, D.equip[i].p, "ctr f10 val", last+"r3", "eqp:"+i);
@@ -1217,6 +1254,8 @@ function load(){
       else b[k] = o[k];
     }
     D = b;
+    // 旧データ(区分名 cat を持たない)を読んだ場合は従来の区分名を補う
+    D.equip.forEach((e,i)=>{ if(!e.cat) e.cat = EQUIP_LABEL[i] || "その他"; });
     document.getElementById("saveState").textContent = "前回の続き";
   }catch(e){ /* 壊れていたら白紙で始める */ }
 }
@@ -1382,9 +1421,20 @@ function openEditor(key){
     t.addEventListener("input",check);
     firstInput=t;
   }
+  else if (parts[0]==="eqcat"){
+    const idx=+parts[1];
+    titleEl.textContent = (idx+1)+"行目の区分名";
+    const inp=mkText(D.equip[idx].cat,"区分名（下のボタンで選ぶ・手入力）");
+    const i=field("区分名", inp, "下のボタンで選ぶか、直接入力できます（例：室内機）。");
+    const chips=buildCatChips(inp, (v)=>{ D.equip[idx].cat=v; commit(); });
+    bodyEl.appendChild(chips); markChip(chips, D.equip[idx].cat);
+    i.addEventListener("input",()=>{ D.equip[idx].cat=i.value; commit(); markChip(chips, i.value); });
+    firstInput=i;
+  }
   else if (parts[0]==="eqm"||parts[0]==="eqs"||parts[0]==="eqp"){
     const idx=+parts[1];
-    const fmap={eqm:["型名",EQ_LABEL[idx]],eqs:["製造番号",EQUIP_LABEL[idx]+" 製造番号"],eqp:["系統名・据付場所",EQUIP_LABEL[idx]+" 据付場所"]};
+    const catName = D.equip[idx].cat || ("機器"+(idx+1));
+    const fmap={eqm:["型名",catName+" の型名"],eqs:["製造番号",catName+" の製造番号"],eqp:["系統名・据付場所",catName+" の据付場所"]};
     const prop={eqm:"m",eqs:"s",eqp:"p"}[parts[0]];
     titleEl.textContent = fmap[parts[0]][1];
     const i=field(fmap[parts[0]][0], mkText(D.equip[idx][prop]));
@@ -1435,9 +1485,10 @@ function openEditor(key){
     titleEl.textContent = "入力";
   }
 
-  // 共通ボタン
+  // 共通ボタン。区分名は空にせず既定へ戻すので、文言も「デフォルトに戻す」にする
   if (key !== "sign" && key !== "co" && key !== "rdate"){
-    btn("この欄を空にする","ghost",()=>{ clearField(key); closeEditor(); });
+    const clearLabel = (parts[0]==="eqcat") ? "デフォルトに戻す" : "この欄を空にする";
+    btn(clearLabel,"ghost",()=>{ clearField(key); closeEditor(); });
   }
   btn("閉じる","primary", closeEditor);
 
@@ -1453,6 +1504,7 @@ function clearField(key){
   else if(p[0]==="date") D.days[+p[1]].d="";
   else if(p[0]==="time"){ if(p[1]==="beg") D.days[+p[2]].s=""; else D.days[+p[2]].e=""; }
   else if(p[0]==="multi") D[p[1]]="";
+  else if(p[0]==="eqcat") D.equip[+p[1]].cat = EQUIP_LABEL[+p[1]] || "その他";  // 空にすると既定の区分名に戻す
   else if(p[0]==="eqm") D.equip[+p[1]].m="";
   else if(p[0]==="eqs") D.equip[+p[1]].s="";
   else if(p[0]==="eqp") D.equip[+p[1]].p="";
