@@ -135,8 +135,11 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   height:265mm;
   background:#fff;
   display:grid;
-  grid-template-columns:repeat(354,1fr);
-  grid-template-rows:repeat(3,18fr) repeat(49,14fr);
+  /* 右端に2, 下端に4 の空きを足している。
+     罫線が用紙の縁ちょうどに来ると、印刷時に丸められて細くなったり
+     消えたりするため、縁に接しないよう余白を確保している。 */
+  grid-template-columns:repeat(356,1fr);
+  grid-template-rows:repeat(3,18fr) repeat(49,14fr) 4fr;
   color:#000;
   font-family:"Yu Gothic","游ゴシック体",YuGothic,"Hiragino Kaku Gothic ProN",sans-serif;
 }
@@ -361,7 +364,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "1.8";
+const APP_VER = "1.9";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -1009,14 +1012,14 @@ function render(){
     const last = (i===MEAS.length-1) ? "u3 " : "";
     add("A"+r+":B"+r, l, "f9", "l3 "+last);
     add("C"+r, D.meas[k], "rgt f10 val", last);
-    add("D"+r, D.meas[k] ? u : "", "f8", last+"r3");
+    add("D"+r, u, "f8", last+"r3");        // 単位はExcelと同じく常に印刷する
   });
   // 右ブロック(固定2項目 + 自由記入5行)
   MEAS2.forEach(([k,l,u],i)=>{
     const r = 46+i;
     add("E"+r+":F"+r, l, "f10", "t"+(i===0?"3":"1")+" r1");
     add("G"+r, D.meas2[k], "rgt f10 val", "t"+(i===0?"3":"1"));
-    add("H"+r, D.meas2[k] ? u : "", "f8", "t"+(i===0?"3":"1")+" r3");
+    add("H"+r, u, "f8", "t"+(i===0?"3":"1")+" r3");   // 単位は常に印刷する
   });
   for (let i=0;i<5;i++){
     const r = 48+i;
