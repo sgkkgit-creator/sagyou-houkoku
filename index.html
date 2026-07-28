@@ -156,13 +156,16 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 #sheet .shrink{font-size:8pt}
 /* 罫線だけを敷くマス(文字は入らない) */
 #sheet .g{pointer-events:none; min-width:0; min-height:0}
-/* 罫線: 1=極細 2=細 3=中 */
-.l1{border-left:.25pt solid #000}  .t1{border-top:.25pt solid #000}
-.r1{border-right:.25pt solid #000} .u1{border-bottom:.25pt solid #000}
-.l2{border-left:.5pt solid #000}   .t2{border-top:.5pt solid #000}
-.r2{border-right:.5pt solid #000}  .u2{border-bottom:.5pt solid #000}
-.l3{border-left:1pt solid #000}    .t3{border-top:1pt solid #000}
-.r3{border-right:1pt solid #000}   .u3{border-bottom:1pt solid #000}
+/* 罫線: 1=極細 2=細 3=中
+   0.25pt だと iPhone(iOS Safari)が「1ドット未満」と判断して線を捨ててしまい、
+   極細の罫線だけがPDFから消える。どの端末でも必ず描かれるよう
+   一番細い線でも 0.5pt を確保している。 */
+.l1{border-left:.5pt solid #000}    .t1{border-top:.5pt solid #000}
+.r1{border-right:.5pt solid #000}   .u1{border-bottom:.5pt solid #000}
+.l2{border-left:.75pt solid #000}   .t2{border-top:.75pt solid #000}
+.r2{border-right:.75pt solid #000}  .u2{border-bottom:.75pt solid #000}
+.l3{border-left:1.25pt solid #000}  .t3{border-top:1.25pt solid #000}
+.r3{border-right:1.25pt solid #000} .u3{border-bottom:1.25pt solid #000}
 
 /* ---------- 印刷 ---------- */
 @page{ size:A4 portrait; margin:8mm; }
@@ -364,7 +367,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.0";
+const APP_VER = "2.1";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
