@@ -223,7 +223,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   /* 帳票の後ろに改ページを作らせない */
   #sheet::after{content:none}
 }
-#sheet{box-shadow:0 1px 6px rgba(0,0,0,.18)}
+/* 画面プレビューだけ影を付ける。@media screen で囲まないと、上の
+   印刷用 box-shadow:none より後ろにあるため印刷時も影が復活し、
+   PDFの帳票の外側に薄い影が出てしまう。 */
+@media screen{ #sheet{box-shadow:0 1px 6px rgba(0,0,0,.18)} }
 
 /* ---------- 下部の固定ボタン ---------- */
 #foot{
@@ -364,11 +367,12 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
     <div class="body">
       <p class="note">
         報告書の右上に印刷される自社の情報です。<b>この端末に保存され、外部には送信されません。</b><br>
-        一度登録すれば、以降は入力不要です。「入力クリア」を押しても消えません。
+        あらかじめ自社の情報が入っています。変更したい場合は書き換えてください。「入力クリア」を押しても消えません。
       </p>
       <div class="f"><label>会社名</label><input type="text" id="coName" placeholder="○○株式会社"></div>
       <div class="f"><label>住所</label><input type="text" id="coAddr" placeholder="東京都○○区○○1-2-3 ○○ビル101"></div>
       <div class="f"><label>電話・FAX</label><input type="text" id="coTel" placeholder="TEL 03-0000-0000　　FAX 03-0000-0000"></div>
+      <div class="es-btns" style="margin-top:4px"><button type="button" class="ghost" id="coReset">初期値に戻す</button></div>
     </div>
   </div>
   <div class="sec">
@@ -423,13 +427,19 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.4";
+const APP_VER = "2.5";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
 // 自社情報は入力データとは別に保存する(「入力クリア」で消えないようにするため)
 const KEY_CO = "sagyou-houkokusho-company-v1";
-let CO = { name:"", addr:"", tel:"" };
+// 既定の自社情報。新規端末(保存なし)ではこれが最初から入る。設定タブで変更可能。
+const DEFAULT_CO = {
+  name:"総合化工株式会社",
+  addr:"東京都杉並区和泉1-35-14 トヨトミビル201",
+  tel:"TEL 03-3322-3800　FAX 03-3322-3833"
+};
+let CO = { ...DEFAULT_CO };
 
 function blank(){
   return {
@@ -1239,6 +1249,16 @@ function bindCO(){
       document.getElementById("saveState").textContent = "保存済(自社情報)";
       if (document.getElementById("preview").style.display === "block") render();
     });
+  });
+  const rst = document.getElementById("coReset");
+  if (rst) rst.addEventListener("click", ()=>{
+    if (!confirm("自社情報を初期値に戻します。よろしいですか？")) return;
+    CO = { ...DEFAULT_CO };
+    saveCO();
+    const set = (id,v) => { const e = document.getElementById(id); if (e) e.value = v || ""; };
+    set("coName", CO.name); set("coAddr", CO.addr); set("coTel", CO.tel);
+    document.getElementById("saveState").textContent = "初期値に戻しました";
+    if (document.getElementById("preview").style.display === "block") render();
   });
 }
 
