@@ -217,7 +217,9 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   #pvwrap{overflow:visible; padding:0; margin:0}
   /* 画面用に付けた縮小と高さ指定を解除しないと、印刷が2ページに割れる */
   #pvscale{transform:none !important; height:auto !important; width:auto !important}
-  #sheet{box-shadow:none; margin:0; page-break-inside:avoid; break-inside:avoid}
+  /* 帳票幅(180mm)は印刷可能幅(194mm)より狭いので、左右autoで中央寄せする。
+     margin:0 だと右に余りが全部寄って、PCのPDFで左に寄って見える。 */
+  #sheet{box-shadow:none; margin:0 auto; page-break-inside:avoid; break-inside:avoid}
   /* 帳票の後ろに改ページを作らせない */
   #sheet::after{content:none}
 }
