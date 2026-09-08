@@ -158,6 +158,11 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 #sheet .c{
   display:flex; align-items:center; padding:0 1.2pt;
   font-size:10pt; overflow:hidden; white-space:pre; min-width:0;
+  /* min-height:0 が無いと、グリッドの既定(min-height:auto)により
+     中身の文字が割当行より高いとき行が下に伸び、帳票が 265mm を超えて
+     2ページ目にあふれる。0 を指定して行の高さを固定し、あふれ分は
+     クリップさせる(必ず A4 一枚に収める)。罫線だけの .g と揃える。 */
+  min-height:0;
 }
 #sheet .ctr{justify-content:center; text-align:center}
 #sheet .rgt{justify-content:flex-end; text-align:right}
@@ -427,7 +432,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.5";
+const APP_VER = "2.6";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
