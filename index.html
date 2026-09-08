@@ -140,11 +140,15 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    グリッドに割り付けています。時刻が切れないよう P と R だけ
    17→24 に広げてあります(合計 354 分割)。 */
 #sheet{
-  /* A4(210x297mm)に対し、用紙余白8mmを足しても 196x281mm。
-     端末が独自の余白(最大12.7mm)を強制してきても 205x290mm で収まる寸法。
-     ここを目一杯にすると1mmの誤差で2ページに割れるため、余裕を持たせている。 */
+  /* A4(210x297mm)。幅は 180mm で余裕あり。
+     高さは 248mm に抑えている。理由:
+     iOS Safari は印刷時に URL と日時のヘッダー・フッターを勝手に足し、
+     さらに CSS の @page margin を無視して独自余白を取る。
+     このため実際に使える高さは A4 の 297mm よりかなり小さくなり、
+     265mm では下端の数行(クランク・電流値)が2ページ目にあふれていた。
+     17mm の余裕を確保して、端末差があっても必ず1枚に収める。 */
   width:180mm;
-  height:265mm;
+  height:248mm;
   background:#fff;
   display:grid;
   /* 右端に2, 下端に4 の空きを足している。
@@ -210,7 +214,11 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 .r3{border-right:1.25pt solid #000} .u3{border-bottom:1.25pt solid #000}
 
 /* ---------- 印刷 ---------- */
-@page{ size:A4 portrait; margin:8mm; }
+/* 余白を小さくして使える高さを稼ぐ。帳票側(180x248mm)に十分な余裕を
+   持たせてあるので、この余白が効く環境でも効かない環境(iOS)でも
+   1枚に収まる。iOS は @page margin を無視し独自余白を取るため、
+   最終的な収まりは #sheet の高さ 248mm 側で担保している。 */
+@page{ size:A4 portrait; margin:5mm; }
 @media print{
   html,body{margin:0; padding:0; background:#fff; height:auto; overflow:visible}
   /* 画面用の部品はすべて消す。
@@ -432,7 +440,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.6";
+const APP_VER = "2.7";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
