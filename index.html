@@ -110,6 +110,28 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 
 /* ---------- 設定 ---------- */
 #settings{padding:12px 10px calc(90px + var(--safe-b)); display:none}
+
+/* ---------- 保存一覧 ---------- */
+#list{padding:12px 10px calc(90px + var(--safe-b)); display:none}
+#listNote{
+  background:#eef4ff; border:1px solid #cfe0ff; border-radius:8px;
+  padding:8px 10px; font-size:13px; line-height:1.5; margin-bottom:10px;
+}
+#listBox{display:flex; flex-direction:column; gap:8px}
+.rec{
+  border:1px solid #d7dbe0; border-radius:8px; padding:10px;
+  background:#fff; display:flex; align-items:center; gap:10px;
+}
+.rec.cur{border-color:#1565c0; background:#f5f9ff}
+.rec-main{flex:1; min-width:0}
+.rec-d{font-size:12px; color:#555}
+.rec-c{font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rec-t{font-size:13px; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rec-badge{font-size:11px; color:#1565c0; font-weight:700}
+.rec-btns{display:flex; flex-direction:column; gap:6px; flex-shrink:0}
+.rec-btns button{padding:6px 12px; font-size:13px; border-radius:6px; border:1px solid #b9c0c8; background:#fff}
+.rec-btns button.del{color:#c62828; border-color:#e6b8b8}
+#listEmpty{color:#666; font-size:14px; text-align:center; padding:24px 0}
 .note{font-size:12px; color:var(--sub); margin:0 0 12px; line-height:1.6}
 /* 区分名などの選択ボタン */
 .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px}
@@ -223,7 +245,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   html,body{margin:0; padding:0; background:#fff; height:auto; overflow:visible}
   /* 画面用の部品はすべて消す。
      特に #foot は position:fixed のため、残すと印刷時にも居座って2ページ目を作る。 */
-  #bar,#tabs,#form,#settings,#pvnote,#tapHint,#foot,#editSheet{display:none !important}
+  #bar,#tabs,#form,#settings,#list,#pvnote,#tapHint,#foot,#editSheet{display:none !important}
   /* タップ用の色は紙に出さない */
   #sheet .c.tap{background:transparent !important}
   #preview{display:block !important; padding:0; margin:0}
@@ -260,6 +282,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 <div id="tabs" role="tablist">
   <button id="tabForm" role="tab" aria-selected="true">入力</button>
   <button id="tabPrev" role="tab" aria-selected="false">プレビュー</button>
+  <button id="tabList" role="tab" aria-selected="false">保存一覧</button>
   <button id="tabConf" role="tab" aria-selected="false">設定</button>
 </div>
 
@@ -417,8 +440,16 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   <div id="pvwrap"><div id="pvscale"><div id="sheet"></div></div></div>
 </div>
 
+<div id="list">
+  <div id="listNote">
+    現場ごとに「保存」を押すと、ここに貯まります。<b>開く</b>で入力欄に戻り、編集やPDF出力ができます。
+  </div>
+  <div id="listBox"></div>
+</div>
+
 <div id="foot">
-  <button class="ghost" id="btnClear">入力クリア</button>
+  <button class="ghost" id="btnNew">新規作成</button>
+  <button class="ghost" id="btnSaveRec">保存</button>
   <button class="primary" id="btnPdf">PDF出力</button>
 </div>
 
@@ -440,10 +471,25 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.7";
+const APP_VER = "2.8";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
+// 現場ごとに確定保存した報告書の一覧(自動保存の KEY とは別枠)
+const KEY_REC = "sagyou-houkokusho-records-v1";
+// いま編集しているのが保存済みのどれかを指す。新規なら null。
+// 「保存」を押したとき、これがあれば上書き、無ければ新規追加する。
+// アプリを閉じて開き直しても続きが分かるよう、端末にも覚えておく
+// (覚えていないと、再開後の保存で同じ現場が2件並んでしまう)。
+const KEY_CUR = "sagyou-houkokusho-current-v1";
+let curId = null;
+function setCur(id){
+  curId = id;
+  try{
+    if (id) localStorage.setItem(KEY_CUR, id);
+    else localStorage.removeItem(KEY_CUR);
+  }catch(e){}
+}
 // 自社情報は入力データとは別に保存する(「入力クリア」で消えないようにするため)
 const KEY_CO = "sagyou-houkokusho-company-v1";
 // 既定の自社情報。新規端末(保存なし)ではこれが最初から入る。設定タブで変更可能。
@@ -1295,13 +1341,126 @@ function load(){
   }catch(e){ /* 壊れていたら白紙で始める */ }
 }
 
+/* ================= 保存一覧(現場ごとの確定保存) =================
+   ・自動保存(KEY)は「作業中の1件」、こちら(KEY_REC)は「確定した複数件」の二階建て。
+   ・1件 = { id, savedAt, data:(Dと同じ形) }
+   ・保存済みを開いて再保存したときは、同じ現場が2件並ばないよう上書きする。 */
+// 一覧はHTMLを組み立てて表示するため、お客様名に < & " 等が入っていても
+// 表示が壊れないようエスケープする
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+function recAll(){
+  try{
+    const a = JSON.parse(localStorage.getItem(KEY_REC) || "[]");
+    return Array.isArray(a) ? a : [];
+  }catch(e){ return []; }
+}
+function recWrite(a){
+  try{ localStorage.setItem(KEY_REC, JSON.stringify(a)); return true; }
+  catch(e){ return false; }   // 容量超過など
+}
+// 一覧に出す見出し(日付・お客様名・件名)
+function recLabel(d){
+  const dt = (d.dy || d.dm || d.dd)
+    ? [d.dy, d.dm, d.dd].filter(Boolean).join("/")
+    : (d.days && d.days[0] && d.days[0].d ? d.days[0].d : "日付なし");
+  const cus = (d.customer || "").trim() || "お客様名なし";
+  const ttl = (d.title || "").split("\n")[0].trim();
+  return { dt, cus, ttl };
+}
+function recSave(){
+  const a = recAll();
+  const now = Date.now();
+  if (curId){
+    const i = a.findIndex(r => r.id === curId);
+    if (i >= 0){
+      a[i] = { id:curId, savedAt:now, data:JSON.parse(JSON.stringify(D)) };
+      if (!recWrite(a)){ alert("保存できませんでした。端末の空き容量を確認してください。"); return; }
+      document.getElementById("saveState").textContent = "上書き保存しました";
+      renderList();
+      return;
+    }
+  }
+  const id = "r" + now + "-" + Math.random().toString(36).slice(2,7);
+  a.unshift({ id, savedAt:now, data:JSON.parse(JSON.stringify(D)) });
+  if (!recWrite(a)){ alert("保存できませんでした。端末の空き容量を確認してください。"); return; }
+  setCur(id);
+  document.getElementById("saveState").textContent = "保存しました";
+  renderList();
+}
+function recOpen(id){
+  const r = recAll().find(x => x.id === id);
+  if (!r) return;
+  // 欠け項目があっても壊れないよう、load()と同じ手順で差し込む
+  const b = blank();
+  for (const k in b){
+    if (r.data[k] === undefined) continue;
+    if (Array.isArray(b[k])) b[k] = r.data[k];
+    else if (typeof b[k] === "object") Object.assign(b[k], r.data[k]);
+    else b[k] = r.data[k];
+  }
+  D = b;
+  D.equip.forEach((e,i)=>{ if(!e.cat) e.cat = EQUIP_LABEL[i] || "その他"; });
+  setCur(id);
+  fillForm();
+  save();
+  showTab("form");
+  document.getElementById("saveState").textContent = "保存分を開きました";
+}
+function recDelete(id){
+  const r = recAll().find(x => x.id === id);
+  const L = r ? recLabel(r.data) : null;
+  if (!confirm("この保存を削除します。よろしいですか？" + (L ? "\n\n" + L.dt + "　" + L.cus : ""))) return;
+  const a = recAll().filter(x => x.id !== id);
+  recWrite(a);
+  if (curId === id) setCur(null);   // 開いていた件を消したら、以後の保存は新規扱い
+  renderList();
+}
+function renderList(){
+  const box = document.getElementById("listBox");
+  if (!box) return;
+  const a = recAll();
+  if (!a.length){
+    box.innerHTML = '<div id="listEmpty">まだ保存はありません。<br>入力して「保存」を押すと、ここに貯まります。</div>';
+    return;
+  }
+  box.innerHTML = "";
+  a.forEach(r=>{
+    const L = recLabel(r.data);
+    const el = document.createElement("div");
+    el.className = "rec" + (r.id === curId ? " cur" : "");
+    const main = document.createElement("div");
+    main.className = "rec-main";
+    main.innerHTML =
+      '<div class="rec-d">' + esc(L.dt) +
+      (r.id === curId ? ' <span class="rec-badge">編集中</span>' : '') + '</div>' +
+      '<div class="rec-c">' + esc(L.cus) + '</div>' +
+      (L.ttl ? '<div class="rec-t">' + esc(L.ttl) + '</div>' : '');
+    const btns = document.createElement("div");
+    btns.className = "rec-btns";
+    const bo = document.createElement("button");
+    bo.textContent = "開く";
+    bo.addEventListener("click", ()=> recOpen(r.id));
+    const bd = document.createElement("button");
+    bd.className = "del"; bd.textContent = "削除";
+    bd.addEventListener("click", ()=> recDelete(r.id));
+    btns.appendChild(bo); btns.appendChild(bd);
+    el.appendChild(main); el.appendChild(btns);
+    box.appendChild(el);
+  });
+}
+
 function showTab(which){
-  const pane = { form:"form", prev:"preview", conf:"settings" };
-  const tab  = { form:"tabForm", prev:"tabPrev", conf:"tabConf" };
+  const pane = { form:"form", prev:"preview", list:"list", conf:"settings" };
+  const tab  = { form:"tabForm", prev:"tabPrev", list:"tabList", conf:"tabConf" };
   Object.keys(pane).forEach(k=>{
     document.getElementById(pane[k]).style.display = (k === which) ? "block" : "none";
     document.getElementById(tab[k]).setAttribute("aria-selected", String(k === which));
   });
+  if (which === "list") renderList();   // 開くたびに最新の一覧にする
   if (which === "prev"){
     render(); fitPreview(); shrinkToFit();   // 表示された状態で幅を測り直す
   }
@@ -1565,6 +1724,7 @@ document.querySelector("#editSheet .es-back").addEventListener("click", closeEdi
 
 document.getElementById("tabForm").addEventListener("click", ()=>showTab("form"));
 document.getElementById("tabPrev").addEventListener("click", ()=>showTab("prev"));
+document.getElementById("tabList").addEventListener("click", ()=>showTab("list"));
 document.getElementById("tabConf").addEventListener("click", ()=>showTab("conf"));
 // iPhone をホーム画面アプリ(standalone)として起動していると、
 // WebKit の制約で window.print() が何も起こさない。その場合は案内を出す。
@@ -1615,14 +1775,29 @@ document.getElementById("btnPdf").addEventListener("click", ()=>{
     }
   }, 1500);
 });
-document.getElementById("btnClear").addEventListener("click", ()=>{
-  // 消えるのは報告内容だけ。設定タブの自社情報は残す。
-  if (!confirm("入力内容をすべて消して白紙に戻します。\n（設定タブの自社情報は消えません）\nよろしいですか？")) return;
+document.getElementById("btnNew").addEventListener("click", ()=>{
+  // 消えるのは入力欄の内容だけ。保存一覧の各件と、設定タブの自社情報は残る。
+  const msg = curId
+    ? "入力欄を白紙にして、新しい報告書を作ります。\n（いま開いている保存分は一覧に残ります）\nよろしいですか？"
+    : "入力内容をすべて消して白紙に戻します。\n（保存一覧と設定タブの自社情報は消えません）\nよろしいですか？";
+  if (!confirm(msg)) return;
   D = blank();
+  setCur(null);              // 以後の「保存」は新規追加になる
   fillForm();
   save();
   render();
+  showTab("form");
   document.getElementById("saveState").textContent = "白紙に戻しました";
+});
+
+document.getElementById("btnSaveRec").addEventListener("click", ()=>{
+  // 空のまま保存すると一覧が「お客様名なし」で埋まるので、目印が何も無い時だけ確認する
+  const L = recLabel(D);
+  if (L.cus === "お客様名なし" && !L.ttl && L.dt === "日付なし"){
+    if (!confirm("まだ何も入力されていないようです。このまま保存しますか？")) return;
+  }
+  recSave();
+  showTab("list");           // 保存されたことが一覧で確認できる
 });
 window.addEventListener("resize", ()=>{
   if (document.getElementById("preview").style.display === "block") fitPreview();
@@ -1635,8 +1810,15 @@ initSign();
 bindCO();
 loadCO();
 load();
+// 前回どの保存分を編集していたか復元する。既に削除されていたら新規扱いに戻す。
+try{
+  const cid = localStorage.getItem(KEY_CUR);
+  if (cid && recAll().some(r => r.id === cid)) curId = cid;
+  else if (cid) localStorage.removeItem(KEY_CUR);
+}catch(e){}
 fillForm();
 render();
+renderList();
 
 /* ---- オフラインでも開けるようにする(GitHub Pages 公開時のみ有効) ---- */
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")){
