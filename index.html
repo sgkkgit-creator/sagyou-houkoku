@@ -131,7 +131,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 .rec-btns{display:flex; flex-direction:column; gap:6px; flex-shrink:0}
 .rec-btns button{padding:6px 12px; font-size:13px; border-radius:6px; border:1px solid #b9c0c8; background:#fff}
 .rec-btns button.dup{color:#1565c0; border-color:#aecbea}
+.rec-btns button.exp{color:#1b7a43; border-color:#bcdfca}
 .rec-btns button.del{color:#c62828; border-color:#e6b8b8}
+#listTools{margin:0 0 10px}
+#listTools #btnImport{width:100%}
 #listEmpty{color:#666; font-size:14px; text-align:center; padding:24px 0}
 .note{font-size:12px; color:var(--sub); margin:0 0 12px; line-height:1.6}
 /* 区分名などの選択ボタン */
@@ -432,7 +435,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
     <div class="body">
       <p class="note">
         入力内容と自社情報は、この端末のブラウザ内にのみ保存されます。他の端末とは同期しません。<br>
-        ブラウザのデータを消去すると消えるため、仕上がった報告書は必ず PDF で残してください。
+        ブラウザのデータを消去すると消えるため、仕上がった報告書は必ず PDF で残すか、<b>「保存一覧」タブの各報告書の「書き出し」</b>でファイルの控えを取ってください。機種変更のときは、書き出したファイルを新しい端末の「読み込み」で戻せます。
       </p>
     </div>
   </div>
@@ -448,7 +451,12 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 <div id="list">
   <div id="listNote">
     現場ごとに「保存」を押すと、ここに貯まります。<b>開く</b>で入力欄に戻り、編集やPDF出力ができます。<br>
-    <b>複製</b>は、引き継ぐ項目（お客様情報・作業者・修理機器・件名・状況・作業内容など）を選んで新しい報告書を作ります（報告日・作業日時・サインは必ず空になります）。
+    <b>複製</b>は、引き継ぐ項目（お客様情報・作業者・修理機器・件名・状況・作業内容など）を選んで新しい報告書を作ります（報告日・作業日時・サインは必ず空になります）。<br>
+    <b>書き出し</b>は、その報告書を1件のファイルに保存します。下の<b>読み込み</b>で、そのファイルを一覧に追加できます（機種変更・受け渡しに）。
+  </div>
+  <div id="listTools">
+    <button type="button" class="ghost" id="btnImport">ファイルから読み込み（追加）</button>
+    <input type="file" id="fileImport" accept="application/json,.json" multiple hidden>
   </div>
   <div id="listBox"></div>
 </div>
@@ -477,7 +485,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "3.0";
+const APP_VER = "3.2";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -1522,6 +1530,91 @@ function recDelete(id){
   if (curId === id) setCur(null);   // 開いていた件を消したら、以後の保存は新規扱い
   renderList();
 }
+/* ---------- 報告書を1件ずつ ファイルに書き出し / 読み込み ----------
+   1件＝1ファイル(JSON)。書き出しは保存一覧の各行から。
+   読み込みは一覧に「追加」(同じ内容の再読み込みはID一致で上書き)。
+   複数ファイルをまとめて選んで読み込むこともできる。 */
+function recExportOne(id){
+  const r = recAll().find(x => x.id === id);
+  if (!r) return;
+  const payload = {
+    app: "sagyou-houkoku",
+    type: "report",
+    version: APP_VER,
+    exportedAt: new Date().toISOString(),
+    id: r.id,
+    savedAt: r.savedAt,
+    data: r.data
+  };
+  const L = recLabel(r.data);
+  const safe = s => String(s || "").replace(/[\\/:*?"<>|\n\r\t]/g, "_").trim();
+  const parts = [safe(String(L.dt).replace(/\//g,"-")), safe(L.cus), safe(L.ttl)].filter(Boolean);
+  const name = (parts.join("_") || "作業報告書") + ".json";
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:"application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+  document.getElementById("saveState").textContent = "書き出しました（" + L.cus + "）";
+}
+
+// 1ファイルの中身から報告書レコードの配列を取り出す。
+// 1件形式(data)・生データ・まとめ形式(records)のいずれも受け付ける。
+function recParseFile(text){
+  const data = JSON.parse(text);
+  if (!data || typeof data !== "object") throw new Error("形式が違います");
+  if (data.app && data.app !== "sagyou-houkoku") throw new Error("作業報告書のファイルではありません");
+  let items = [];
+  if (Array.isArray(data.records)) items = data.records;                 // まとめ形式も一応受ける
+  else if (data.data && typeof data.data === "object") items = [data];   // 1件形式
+  else if ("customer" in data || "title" in data || "equip" in data) items = [{ data }]; // 生データのみ
+  else throw new Error("報告書データが見つかりません");
+  return items.map((r)=>{
+    const src = (r && typeof r.data === "object" && r.data) ? r.data : (r || {});
+    const b = blank();
+    for (const k in b){ if (k in src) b[k] = src[k]; }
+    return { id: (r && r.id) || null, savedAt: (r && r.savedAt) || Date.now(), data: b };
+  });
+}
+
+// 選んだ1つ以上のファイルを一覧に追加する
+function recImportFiles(fileList){
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  let added = 0, updated = 0, failed = 0, pending = files.length;
+  const finish = ()=>{
+    if (--pending > 0) return;
+    renderList();
+    let msg = "読み込み：追加 " + added + " 件";
+    if (updated) msg += " / 上書き " + updated + " 件";
+    if (failed)  msg += " / 失敗 " + failed + " 件";
+    document.getElementById("saveState").textContent = msg;
+    alert(msg + "。");
+  };
+  files.forEach(f=>{
+    const rd = new FileReader();
+    rd.onload = ()=>{
+      try{
+        const items = recParseFile(rd.result);
+        const a = recAll();
+        items.forEach(it=>{
+          let i = it.id ? a.findIndex(x => x.id === it.id) : -1;
+          if (i >= 0){ a[i] = { id: it.id, savedAt: it.savedAt, data: it.data }; updated++; }
+          else {
+            const nid = it.id || ("r" + Date.now() + "-" + Math.random().toString(36).slice(2,7));
+            a.unshift({ id: nid, savedAt: it.savedAt, data: it.data }); added++;
+          }
+        });
+        if (!recWrite(a)) throw new Error("容量オーバー");
+      }catch(err){ failed++; }
+      finish();
+    };
+    rd.onerror = ()=>{ failed++; finish(); };
+    rd.readAsText(f);
+  });
+}
+
 function renderList(){
   const box = document.getElementById("listBox");
   if (!box) return;
@@ -1550,10 +1643,13 @@ function renderList(){
     const bc = document.createElement("button");
     bc.className = "dup"; bc.textContent = "複製";
     bc.addEventListener("click", ()=> openDupSheet(r.id));
+    const be = document.createElement("button");
+    be.className = "exp"; be.textContent = "書き出し";
+    be.addEventListener("click", ()=> recExportOne(r.id));
     const bd = document.createElement("button");
     bd.className = "del"; bd.textContent = "削除";
     bd.addEventListener("click", ()=> recDelete(r.id));
-    btns.appendChild(bo); btns.appendChild(bc); btns.appendChild(bd);
+    btns.appendChild(bo); btns.appendChild(bc); btns.appendChild(be); btns.appendChild(bd);
     el.appendChild(main); el.appendChild(btns);
     box.appendChild(el);
   });
@@ -1832,6 +1928,15 @@ document.getElementById("tabForm").addEventListener("click", ()=>showTab("form")
 document.getElementById("tabPrev").addEventListener("click", ()=>showTab("prev"));
 document.getElementById("tabList").addEventListener("click", ()=>showTab("list"));
 document.getElementById("tabConf").addEventListener("click", ()=>showTab("conf"));
+
+// ファイルから読み込み（追加）。複数選択可。
+document.getElementById("btnImport").addEventListener("click", ()=> document.getElementById("fileImport").click());
+document.getElementById("fileImport").addEventListener("change", (e)=>{
+  const files = e.target.files;
+  if (!files || !files.length) return;
+  recImportFiles(files);
+  e.target.value = "";          // 同じファイルを続けて選べるように
+});
 // iPhone をホーム画面アプリ(standalone)として起動していると、
 // WebKit の制約で window.print() が何も起こさない。その場合は案内を出す。
 function isIOS(){
