@@ -130,6 +130,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 .rec-badge{font-size:11px; color:#1565c0; font-weight:700}
 .rec-btns{display:flex; flex-direction:column; gap:6px; flex-shrink:0}
 .rec-btns button{padding:6px 12px; font-size:13px; border-radius:6px; border:1px solid #b9c0c8; background:#fff}
+.rec-btns button.dup{color:#1565c0; border-color:#aecbea}
 .rec-btns button.del{color:#c62828; border-color:#e6b8b8}
 #listEmpty{color:#666; font-size:14px; text-align:center; padding:24px 0}
 .note{font-size:12px; color:var(--sub); margin:0 0 12px; line-height:1.6}
@@ -442,7 +443,8 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 
 <div id="list">
   <div id="listNote">
-    現場ごとに「保存」を押すと、ここに貯まります。<b>開く</b>で入力欄に戻り、編集やPDF出力ができます。
+    現場ごとに「保存」を押すと、ここに貯まります。<b>開く</b>で入力欄に戻り、編集やPDF出力ができます。<br>
+    <b>複製</b>は、お客様情報・作業者・修理機器を引き継いで新しい報告書を作ります（作業内容とサインは空になります）。
   </div>
   <div id="listBox"></div>
 </div>
@@ -471,7 +473,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.8";
+const APP_VER = "2.9";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -1410,6 +1412,42 @@ function recOpen(id){
   showTab("form");
   document.getElementById("saveState").textContent = "保存分を開きました";
 }
+/* 保存分を元に新規報告書を作る(複製)。
+   同じ建物に何度も行くため、毎回打ち直さずに済むようにする。
+   引き継ぐのは「現場に紐づく情報」だけで、作業の中身は必ず白紙に戻す。
+   とくにサインは絶対に引き継がない。前回いただいた承認が新しい報告書に
+   残ると、受けていない作業に承認印が押された書類になってしまうため。 */
+function recDuplicate(id){
+  const r = recAll().find(x => x.id === id);
+  if (!r) return;
+  const src = r.data;
+  const b = blank();
+
+  // 現場に紐づく情報 — 引き継ぐ
+  ["customer","address","contact","client","chief"].forEach(k=>{
+    if (typeof src[k] === "string") b[k] = src[k];
+  });
+  if (Array.isArray(src.workers)){
+    b.workers = b.workers.map((v,i)=> typeof src.workers[i] === "string" ? src.workers[i] : "");
+  }
+  if (Array.isArray(src.equip)){
+    b.equip = b.equip.map((e,i)=>{
+      const s = src.equip[i];
+      return s ? { cat:s.cat || e.cat, m:s.m || "", s:s.s || "", p:s.p || "" } : e;
+    });
+  }
+
+  // 報告日・作業日時・報告内容・運転データ・備考・サインは blank() のまま(白紙)
+
+  D = b;
+  setCur(null);               // 新規扱い。保存すれば別件として増え、元の件は変わらない
+  fillForm();
+  save();
+  render();
+  showTab("form");
+  document.getElementById("saveState").textContent = "複製しました（作業内容とサインは空です）";
+}
+
 function recDelete(id){
   const r = recAll().find(x => x.id === id);
   const L = r ? recLabel(r.data) : null;
@@ -1444,10 +1482,13 @@ function renderList(){
     const bo = document.createElement("button");
     bo.textContent = "開く";
     bo.addEventListener("click", ()=> recOpen(r.id));
+    const bc = document.createElement("button");
+    bc.className = "dup"; bc.textContent = "複製";
+    bc.addEventListener("click", ()=> recDuplicate(r.id));
     const bd = document.createElement("button");
     bd.className = "del"; bd.textContent = "削除";
     bd.addEventListener("click", ()=> recDelete(r.id));
-    btns.appendChild(bo); btns.appendChild(bd);
+    btns.appendChild(bo); btns.appendChild(bc); btns.appendChild(bd);
     el.appendChild(main); el.appendChild(btns);
     box.appendChild(el);
   });
