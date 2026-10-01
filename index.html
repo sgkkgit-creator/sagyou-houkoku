@@ -107,6 +107,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
   touch-action:none;            /* 指で描くときに画面がスクロールしないようにする */
   cursor:crosshair;
 }
+#sigPad.locked{ background:#eef0f2; }   /* 確定サインのロック中 */
 
 /* ---------- 設定 ---------- */
 #settings{padding:12px 10px calc(90px + var(--safe-b)); display:none}
@@ -485,7 +486,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "3.2";
+const APP_VER = "3.3";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -775,6 +776,9 @@ function initSign(){
   // 画面の実寸に合わせて解像度を用意する(粗くならないように)
   function resize(){
     const r = cv.getBoundingClientRect();
+    // 入力タブが非表示のときは幅・高さが0になる。ここでCanvasを作り直すと
+    // 1x1になってサインが描けず・表示も消えるため、見えていないときは触らない。
+    if (!r.width || !r.height) return;
     const w = Math.max(1, Math.round(r.width  * dpr()));
     const h = Math.max(1, Math.round(r.height * dpr()));
     if (cv.width === w && cv.height === h) return;
@@ -799,7 +803,26 @@ function initSign(){
     return { x:(e.clientX - r.left) * dpr(), y:(e.clientY - r.top) * dpr() };
   }
 
+  // 確定サインのロック。保存済みでサインがある報告書は、いただいたサインを
+  // 守るため編集不可にする。やり直すときだけ確認のうえ解除する。
+  let locked = false;
+  function updateUI(){
+    const clr = document.getElementById("sigClear");
+    if (locked){
+      cv.style.cursor = "not-allowed";
+      cv.classList.add("locked");
+      st.textContent = "記入済み（ロック中・編集不可）";
+      if (clr) clr.textContent = "サインをやり直す";
+    } else {
+      cv.style.cursor = "crosshair";
+      cv.classList.remove("locked");
+      st.textContent = D.sign ? "記入済み" : "未記入";
+      if (clr) clr.textContent = "サインを消す";
+    }
+  }
+
   cv.addEventListener("pointerdown", e=>{
+    if (locked) return;            // 確定サインは描き変えさせない
     e.preventDefault();
     try{ cv.setPointerCapture(e.pointerId); }catch(_){}
     drawing = true; moved = false;
@@ -818,7 +841,7 @@ function initSign(){
     drawing = false;
     if (!moved) return;
     D.sign = cv.toDataURL("image/png");
-    st.textContent = "記入済み";
+    updateUI();
     touch();
   }
   cv.addEventListener("pointerup", finish);
@@ -826,24 +849,27 @@ function initSign(){
   cv.addEventListener("pointerleave", finish);
 
   document.getElementById("sigClear").addEventListener("click", ()=>{
+    if (locked){
+      if (!confirm("このサインはお客様からいただいた確定サインです。\nやり直すと今のサインは消えます。よろしいですか？")) return;
+      locked = false;
+    }
     ctx.clearRect(0,0,cv.width,cv.height);
     setStyle();
     D.sign = "";
-    st.textContent = "未記入";
+    updateUI();
     touch();
   });
 
   window.addEventListener("resize", resize);
 
   sigApi = {
-    set(url){
-      resize();
-      draw(url);
-      st.textContent = url ? "記入済み" : "未記入";
-    }
+    set(url){ resize(); draw(url); updateUI(); },
+    lock(flag){ locked = !!flag; updateUI(); }
   };
   resize();
 }
+// 保存済み＋サインありのときだけサインをロックする
+function applySignLock(){ if (sigApi) sigApi.lock(!!curId && !!D.sign); }
 
 // 保存済みデータをフォームに戻す
 function fillForm(){
@@ -863,6 +889,7 @@ function fillForm(){
   D.free.forEach((v,i)=>{ set("frl"+i,v.l); set("frv"+i,v.v); set("fru"+i,v.u); });
   Object.keys(LIMIT).forEach(k=>{ const t=document.getElementById(k); if (t && t._check) t._check(); });
   if (sigApi) sigApi.set(D.sign);
+  applySignLock();
 }
 
 /* ===================================================================
@@ -1394,6 +1421,7 @@ function recSave(){
       a[i] = { id:curId, savedAt:now, data:JSON.parse(JSON.stringify(D)) };
       if (!recWrite(a)){ alert("保存できませんでした。端末の空き容量を確認してください。"); return; }
       document.getElementById("saveState").textContent = "上書き保存しました";
+      applySignLock();
       renderList();
       return;
     }
@@ -1403,6 +1431,7 @@ function recSave(){
   if (!recWrite(a)){ alert("保存できませんでした。端末の空き容量を確認してください。"); return; }
   setCur(id);
   document.getElementById("saveState").textContent = "保存しました";
+  applySignLock();
   renderList();
 }
 function recOpen(id){
@@ -1663,6 +1692,12 @@ function showTab(which){
     document.getElementById(tab[k]).setAttribute("aria-selected", String(k === which));
   });
   if (which === "list") renderList();   // 開くたびに最新の一覧にする
+  if (which === "form" && sigApi){
+    // 入力タブが表示された状態でサインCanvasを採寸し直す。
+    // 非表示のまま採寸すると1x1になり、サインが描けず・表示も消えるため。
+    sigApi.set(D.sign);
+    applySignLock();
+  }
   if (which === "prev"){
     render(); fitPreview(); shrinkToFit();   // 表示された状態で幅を測り直す
   }
@@ -1862,20 +1897,30 @@ function openEditor(key){
   }
   else if (key === "sign"){
     titleEl.textContent = "ご承認サイン";
+    let signLocked = (!!curId && !!D.sign);   // 保存済み＋サインありは確定サイン＝ロック
+    const note=document.createElement("div"); note.className="es-hintline"; note.style.marginBottom="6px";
     const cv=document.createElement("canvas");
-    const f=document.createElement("div"); f.className="f"; f.appendChild(cv); bodyEl.appendChild(f);
+    const f=document.createElement("div"); f.className="f"; f.appendChild(note); f.appendChild(cv); bodyEl.appendChild(f);
     const ctx=cv.getContext("2d");
     const dpr=()=>window.devicePixelRatio||1;
     function setStyle(){ ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#111"; ctx.lineWidth=Math.max(2,2.2*dpr()); }
     function fit(){ const r=cv.getBoundingClientRect(); cv.width=Math.round(r.width*dpr()); cv.height=Math.round(r.height*dpr()); setStyle(); if(D.sign){ const im=new Image(); im.onload=()=>{ctx.clearRect(0,0,cv.width,cv.height);ctx.drawImage(im,0,0,cv.width,cv.height);setStyle();}; im.src=D.sign; } }
+    function updateNote(){ note.textContent = signLocked ? "お客様からいただいた確定サインです。編集するには下の「サインをやり直す」を押してください。" : "枠内に指またはタッチペンでサインしてください。"; cv.style.cursor = signLocked ? "not-allowed" : "crosshair"; }
     let drawing=false, moved=false;
     const pos=e=>{ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*dpr(), y:(e.clientY-r.top)*dpr()}; };
-    cv.addEventListener("pointerdown",e=>{ e.preventDefault(); try{cv.setPointerCapture(e.pointerId);}catch(_){}; drawing=true; moved=false; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
+    cv.addEventListener("pointerdown",e=>{ if(signLocked)return; e.preventDefault(); try{cv.setPointerCapture(e.pointerId);}catch(_){}; drawing=true; moved=false; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
     cv.addEventListener("pointermove",e=>{ if(!drawing)return; e.preventDefault(); const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); moved=true; });
     const fin=()=>{ if(!drawing)return; drawing=false; if(!moved)return; D.sign=cv.toDataURL("image/png"); commit(); };
     cv.addEventListener("pointerup",fin); cv.addEventListener("pointercancel",fin); cv.addEventListener("pointerleave",fin);
     setTimeout(fit,30);
-    btn("サインを消す","ghost",()=>{ ctx.clearRect(0,0,cv.width,cv.height); setStyle(); D.sign=""; commit(); });
+    updateNote();
+    const clrBtn = btn(signLocked ? "サインをやり直す" : "サインを消す","ghost",()=>{
+      if (signLocked){
+        if(!confirm("このサインはお客様からいただいた確定サインです。\nやり直すと今のサインは消えます。よろしいですか？")) return;
+        signLocked=false; updateNote(); clrBtn.textContent="サインを消す";
+      }
+      ctx.clearRect(0,0,cv.width,cv.height); setStyle(); D.sign=""; commit();
+    });
   }
   else {
     titleEl.textContent = "入力";
