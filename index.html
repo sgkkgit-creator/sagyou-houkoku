@@ -218,6 +218,10 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 #editSheet .es-title{font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink)}
 #editSheet .es-body .f{margin-bottom:10px}
 #editSheet .es-body label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px; font-weight:700}
+/* 複製で引き継ぐ項目を選ぶチェック行 */
+#editSheet .es-body label.dup-opt{display:flex; align-items:center; gap:11px; padding:11px 4px; margin:0; border-bottom:1px solid var(--line); font-size:14px; font-weight:400; color:var(--ink); cursor:pointer}
+#editSheet .es-body label.dup-opt input{width:20px; height:20px; flex:none; margin:0}
+#editSheet .es-body label.dup-opt span{font-size:14px; color:var(--ink); font-weight:400}
 #editSheet .es-row{display:flex; gap:8px; align-items:center}
 #editSheet .es-btns{display:flex; gap:8px; margin-top:6px}
 #editSheet .es-btns button{flex:1}
@@ -444,7 +448,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
 <div id="list">
   <div id="listNote">
     現場ごとに「保存」を押すと、ここに貯まります。<b>開く</b>で入力欄に戻り、編集やPDF出力ができます。<br>
-    <b>複製</b>は、お客様情報・作業者・修理機器を引き継いで新しい報告書を作ります（作業内容とサインは空になります）。
+    <b>複製</b>は、引き継ぐ項目（お客様情報・作業者・修理機器・件名・状況・作業内容など）を選んで新しい報告書を作ります（報告日・作業日時・サインは必ず空になります）。
   </div>
   <div id="listBox"></div>
 </div>
@@ -473,7 +477,7 @@ input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;
    =================================================================== */
 // 端末ごとに版が食い違っていないか確かめるための番号。
 // index.html を更新したら、ここと sw.js の CACHE を一緒に上げること。
-const APP_VER = "2.9";
+const APP_VER = "3.0";
 
 const LIMIT = { title:2, situation:4, work:18, material:2 };
 const KEY = "sagyou-houkokusho-v1";
@@ -1413,31 +1417,92 @@ function recOpen(id){
   document.getElementById("saveState").textContent = "保存分を開きました";
 }
 /* 保存分を元に新規報告書を作る(複製)。
-   同じ建物に何度も行くため、毎回打ち直さずに済むようにする。
-   引き継ぐのは「現場に紐づく情報」だけで、作業の中身は必ず白紙に戻す。
-   とくにサインは絶対に引き継がない。前回いただいた承認が新しい報告書に
-   残ると、受けていない作業に承認印が押された書類になってしまうため。 */
-function recDuplicate(id){
+   同じ建物・同じお客様に何度も行くため、毎回打ち直さずに済むようにする。
+   どの項目を引き継ぐかは利用者が選べる。ただし報告日・作業日時・サインは
+   必ず空に戻す。とくにサインは絶対に引き継がない。前回いただいた承認が
+   新しい報告書に残ると、受けていない作業に承認印が押された書類になるため。 */
+
+// 複製で選べる項目グループ。def=既定でチェックするか。apply=引き継ぎ処理。
+// 報告日(dy/dm/dd)・作業日時(days)・サイン(sign)は選択肢に出さず常に空のまま。
+const DUP_GROUPS = [
+  { key:"customer", label:"お客様情報（名前・住所・ご担当・ご依頼元）", def:true,
+    apply:(b,s)=>{ ["customer","address","contact","client"].forEach(k=>{ if(typeof s[k]==="string") b[k]=s[k]; }); } },
+  { key:"workers", label:"作業責任者・作業者", def:true,
+    apply:(b,s)=>{ if(typeof s.chief==="string") b.chief=s.chief;
+      if(Array.isArray(s.workers)) b.workers=b.workers.map((v,i)=> typeof s.workers[i]==="string" ? s.workers[i] : ""); } },
+  { key:"equip", label:"修理機器（区分・型名・製番・場所）", def:true,
+    apply:(b,s)=>{ if(Array.isArray(s.equip)) b.equip=b.equip.map((e,i)=>{ const x=s.equip[i];
+      return x ? { cat:x.cat||e.cat, m:x.m||"", s:x.s||"", p:x.p||"" } : e; }); } },
+  { key:"title",     label:"件名",     def:false, apply:(b,s)=>{ if(typeof s.title==="string") b.title=s.title; } },
+  { key:"situation", label:"状況",     def:false, apply:(b,s)=>{ if(typeof s.situation==="string") b.situation=s.situation; } },
+  { key:"work",      label:"作業内容", def:false, apply:(b,s)=>{ if(typeof s.work==="string") b.work=s.work; } },
+  { key:"material",  label:"使用材料", def:false, apply:(b,s)=>{ if(typeof s.material==="string") b.material=s.material; } },
+  { key:"meas",      label:"運転データ", def:false,
+    apply:(b,s)=>{ if(s.meas) b.meas=Object.assign({}, b.meas, s.meas);
+      if(s.meas2) b.meas2=Object.assign({}, b.meas2, s.meas2);
+      if(Array.isArray(s.free)) b.free=b.free.map((e,i)=>{ const x=s.free[i];
+        return x ? { l:x.l||"", v:x.v||"", u:x.u||"" } : e; }); } },
+  { key:"remark",    label:"備考",     def:false, apply:(b,s)=>{ if(typeof s.remark==="string") b.remark=s.remark; } },
+];
+
+// 前回の選択を覚えておく(毎回同じ選び方をしやすいように)
+const KEY_DUP = "sagyou-houkokusho-dupsel-v1";
+function loadDupSel(){ try{ const o=JSON.parse(localStorage.getItem(KEY_DUP)||"null"); return (o&&typeof o==="object") ? o : {}; }catch(e){ return {}; } }
+function saveDupSel(sel){ try{ localStorage.setItem(KEY_DUP, JSON.stringify(sel)); }catch(e){} }
+
+// 複製ボタン → 引き継ぐ項目を選ぶシートを出す
+function openDupSheet(id){
+  const r = recAll().find(x => x.id === id);
+  if (!r) return;
+  const sheet = document.getElementById("editSheet");
+  const titleEl = sheet.querySelector(".es-title");
+  const bodyEl  = sheet.querySelector(".es-body");
+  const btnsEl  = sheet.querySelector(".es-btns");
+  titleEl.textContent = "複製する項目を選ぶ";
+  bodyEl.innerHTML = ""; btnsEl.innerHTML = "";
+
+  const note = document.createElement("div");
+  note.className = "es-hintline";
+  note.style.marginBottom = "8px";
+  note.textContent = "チェックした項目を引き継いで新しい報告書を作ります。報告日・作業日時・サインは必ず空になります。";
+  bodyEl.appendChild(note);
+
+  const saved = loadDupSel();
+  const boxes = {};
+  DUP_GROUPS.forEach(g=>{
+    const row = document.createElement("label");
+    row.className = "dup-opt";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = (g.key in saved) ? !!saved[g.key] : g.def;
+    const span = document.createElement("span");
+    span.textContent = g.label;
+    row.appendChild(cb); row.appendChild(span);
+    bodyEl.appendChild(row);
+    boxes[g.key] = cb;
+  });
+
+  const mkBtn = (label, cls, fn)=>{ const b=document.createElement("button"); b.textContent=label; b.className=cls; b.addEventListener("click",fn); btnsEl.appendChild(b); return b; };
+  mkBtn("キャンセル","ghost", ()=> sheet.classList.remove("on"));
+  mkBtn("複製する","primary", ()=>{
+    const chosen = {};
+    DUP_GROUPS.forEach(g=>{ chosen[g.key] = boxes[g.key].checked; });
+    saveDupSel(chosen);
+    sheet.classList.remove("on");
+    recDuplicate(id, chosen);
+  });
+
+  sheet.classList.add("on");
+}
+
+function recDuplicate(id, sel){
   const r = recAll().find(x => x.id === id);
   if (!r) return;
   const src = r.data;
   const b = blank();
-
-  // 現場に紐づく情報 — 引き継ぐ
-  ["customer","address","contact","client","chief"].forEach(k=>{
-    if (typeof src[k] === "string") b[k] = src[k];
-  });
-  if (Array.isArray(src.workers)){
-    b.workers = b.workers.map((v,i)=> typeof src.workers[i] === "string" ? src.workers[i] : "");
-  }
-  if (Array.isArray(src.equip)){
-    b.equip = b.equip.map((e,i)=>{
-      const s = src.equip[i];
-      return s ? { cat:s.cat || e.cat, m:s.m || "", s:s.s || "", p:s.p || "" } : e;
-    });
-  }
-
-  // 報告日・作業日時・報告内容・運転データ・備考・サインは blank() のまま(白紙)
+  sel = sel || {};
+  DUP_GROUPS.forEach(g=>{ if (sel[g.key]) g.apply(b, src); });
+  // 報告日・作業日時・サインは blank() のまま(常に空)
 
   D = b;
   setCur(null);               // 新規扱い。保存すれば別件として増え、元の件は変わらない
@@ -1445,7 +1510,7 @@ function recDuplicate(id){
   save();
   render();
   showTab("form");
-  document.getElementById("saveState").textContent = "複製しました（作業内容とサインは空です）";
+  document.getElementById("saveState").textContent = "複製しました（サインは空です）";
 }
 
 function recDelete(id){
@@ -1484,7 +1549,7 @@ function renderList(){
     bo.addEventListener("click", ()=> recOpen(r.id));
     const bc = document.createElement("button");
     bc.className = "dup"; bc.textContent = "複製";
-    bc.addEventListener("click", ()=> recDuplicate(r.id));
+    bc.addEventListener("click", ()=> openDupSheet(r.id));
     const bd = document.createElement("button");
     bd.className = "del"; bd.textContent = "削除";
     bd.addEventListener("click", ()=> recDelete(r.id));
